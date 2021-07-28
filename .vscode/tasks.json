@@ -1,0 +1,57 @@
+{
+  // variable reference: https://code.visualstudio.com/docs/editor/variables-reference
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "[Debug] Build workspace",
+      "type": "shell",
+      "detail": "Builds the workspace using a debug configuration.",
+      "options": {
+        "cwd": "/home/nicolas/catkin_ws"
+      },
+      "linux": {
+        "command": "catkin_make -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCATKIN_WHITELIST_PACKAGES=\"\""
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "[Release] Build workspace",
+      "type": "shell",
+      "detail": "Builds the workspace using a release configuration.",
+      "options": {
+        "cwd": "/home/nicolas/catkin_ws"
+      },
+      "linux": {
+        "command": "catkin_make -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCATKIN_WHITELIST_PACKAGES=\"\""
+      },
+      "group": "build",
+    },
+    {
+      "label": "[Debug] Build Package",
+      "type": "shell",
+      "detail": "Builds only the current package using a debug configuration.",
+      "options": {
+        "cwd": "/home/nicolas/catkin_ws"
+      },
+      "linux": {
+        "command": "catkin_make -DCMAKE_BUILD_TYPE=DEBUG -DCMAKE_EXPORT_COMPILE_COMMANDS=ON --only-pkg-with-deps ${workspaceFolderBasename}"
+      },
+      "group": "build",
+    },
+    {
+      "label": "[Release] Build Package",
+      "type": "shell",
+      "detail": "Builds only the current package using a release configuration.",
+      "options": {
+        "cwd": "/home/nicolas/catkin_ws"
+      },
+      "linux": {
+        "command": "catkin_make -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON --only-pkg-with-deps ${workspaceFolderBasename}"
+      },
+      "group": "build",
+    },
+  ]
+}

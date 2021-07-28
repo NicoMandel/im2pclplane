@@ -13,6 +13,8 @@ find_package(catkin REQUIRED COMPONENTS
   image_transport
   image_view
   tf2
+  tf2_ros
+  tf2_geometry_msgs
   sensor_msgs
   geometry_msgs
 )

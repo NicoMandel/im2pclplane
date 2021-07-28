@@ -50,11 +50,11 @@ public:
     std::vector<cv::Point3d> convertPts(const std::vector<cv::Point3d>,const cv::Mat);
     void calculatePlane(std::vector<cv::Point3d>, std::vector<float>);
     void linesPlaneIntersection(std::vector<cv::Point3d> rays, std::vector<float> plane, std::vector<geometry_msgs::Point32> intersections, cv::Point3d pointOnPlane);
-    bool linePlaneIntersection(cv::Point3d& contact, cv::Point3d ray, cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord);
+    void linePlaneIntersection(cv::Point3f& contact, cv::Point3d ray, cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord);
 };
 
 // Member functions
-PCL_Converter::PCL_Converter(/* args */) : it_(nh_), tf_listener_(tfBuffer)
+PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
 {
     std::string image_topic;
     std::string pcl_topic;
@@ -67,14 +67,15 @@ PCL_Converter::PCL_Converter(/* args */) : it_(nh_), tf_listener_(tfBuffer)
     // world plane points
     // TODO: see if this throws an error
     cv::Vec3d plane_pt1, plane_pt2, plane_pt3;
-    nh_.param("plane/point1", plane_pt1, {0.f, 0.f, 0.f});
-    nh_.param("plane/point1", plane_pt2, {0.f, 1.f, 0.f});
-    nh_.param("plane/point1", plane_pt3, {1.f, 0.f, 0.f});
+    std::vector<float> pt1, pt2, pt3;
+    nh_.param("plane/point1", pt1, {0.f, 0.f, 0.f});
+    nh_.param("plane/point1", pt2, {0.f, 1.f, 0.f});
+    nh_.param("plane/point1", pt3, {1.f, 0.f, 0.f});
 
     // World plane vector
-    plane.push_back(cv::Point3f(plane_pt1));
-    plane.push_back(cv::Point3f(plane_pt2));
-    plane.push_back(cv::Point3f(plane_pt3));
+    plane.push_back(cv::Point3f(pt1.at(0), pt1.at(1), pt1.at(2)));
+    plane.push_back(cv::Point3f(pt2.at(0), pt2.at(1), pt2.at(2)));
+    plane.push_back(cv::Point3f(pt3.at(0), pt3.at(1), pt3.at(2)));
 }
 
 // Image Callback
@@ -105,7 +106,7 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
         ros::Duration timeout(1.0 / 30);
         transform = tfBuffer.lookupTransform(cam_model_.tfFrame(), this->world_frame, image_time, timeout);
     } catch(tf2::TransformException& ex){
-        ROS_WARN("Failed to get transform from %s to %s", cam_model_.tfFrame(), this->world_frame);
+        ROS_WARN("Failed to get transform from %s to %s", cam_model_.tfFrame().c_str(), this->world_frame.c_str());
         return;
     }
 
@@ -259,7 +260,7 @@ void PCL_Converter::calculatePlane(std::vector<cv::Point3d> points, std::vector<
 }
 
 // Calculating the intersection of a plane and a set of lines
-void linesPlaneIntersection(std::vector<cv::Point3d> rays, std::vector<float> plane, std::vector<geometry_msgs::Point32> intersections, cv::Point3d pointOnPlane){
+void PCL_Converter::linesPlaneIntersection(std::vector<cv::Point3d> rays, std::vector<float> plane, std::vector<geometry_msgs::Point32> intersections, cv::Point3d pointOnPlane){
     cv::Point3f intersection;
     geometry_msgs::Point32 msg;
     cv::Point3d normal(plane.at(0), plane.at(1), plane.at(2));
@@ -275,7 +276,7 @@ void linesPlaneIntersection(std::vector<cv::Point3d> rays, std::vector<float> pl
 
 // calculating the intersection of a single line and a plane
 // From: https://stackoverflow.com/questions/7168484/3d-line-segment-and-plane-intersection
-void linePlaneIntersection(cv::Point3f& contact, cv::Point3d ray, cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord){
+void PCL_Converter::linePlaneIntersection(cv::Point3f& contact, cv::Point3d ray, cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord){
 
     // getting the d - value
     float d = normal.dot(coord);
@@ -285,12 +286,11 @@ void linePlaneIntersection(cv::Point3f& contact, cv::Point3d ray, cv::Point3d ra
     // TODO: since the ray origin is always at 0, the first dot product could be omitted
 
     contact = rayOrigin + x * ray;
-
 }
 
 int main(int argc, char **argv){
-    ros::init(argc, argv, "test_node");
-    PCL_Converter convert();
+    ros::init(argc, argv, "plane_node");
+    PCL_Converter convert;
     ros::spin();
     return 0;
 }
