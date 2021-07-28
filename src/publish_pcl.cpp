@@ -18,6 +18,7 @@
 #include <tf/transform_listener.h>
 #include <sensor_msgs/image_encodings.h>
 
+
 // own imports
 #include <sensor_msgs/PointCloud.h>
 
@@ -124,7 +125,7 @@ std::vector<cv::Point3d> PCL_Converter::convertPixelsToRays(int width, int heigh
 
     for (int x=0; x<height; x++){
         for (int y=0; y<width; y++){
-            cv::Point2d uv_rect = rectifyPoint(x, y, cx, cy, fx, fy);
+            cv::Point2d uv_rect = homogenisePoint(x, y, cx, cy, fx, fy);
             cv::Point3d ray = this->cam_model_.projectPixelTo3dRay(uv_rect);
             output_vec.push_back(ray);
         }
