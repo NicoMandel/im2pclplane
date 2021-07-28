@@ -49,6 +49,8 @@ public:
     void TransformToT(const geometry_msgs::TransformStamped, cv::Mat&);
     std::vector<cv::Point3d> convertPts(const std::vector<cv::Point3d>,const cv::Mat);
     void calculatePlane(std::vector<cv::Point3d>, std::vector<float>);
+    void linesPlaneIntersection(std::vector<cv::Point3d> rays, std::vector<float> plane, std::vector<geometry_msgs::Point32> intersections, cv::Point3d pointOnPlane);
+    bool linePlaneIntersection(cv::Point3d& contact, cv::Point3d ray, cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord);
 };
 
 // Member functions
@@ -109,7 +111,7 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
 
     // Get a ray for each pixel
     // TODO: Preallocate vector for speed
-    // TODO: theoretically, this can be done once
+    // TODO: theoretically, this can be done once -> only the 3 points for the plane need to be converted anew
     std::vector<cv::Point3d> rays = convertPixelsToRays(width, height);
 
     // Convert OpenCV and ROS representations
@@ -124,10 +126,15 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     calculatePlane(newpts, planecoeff);
 
     // Calculate the intersection of plane and rays
-    
+    std::vector<geometry_msgs::Point32> planePoints;
+    linesPlaneIntersection(rays, planecoeff, planePoints, newpts.at(0));
 
     // turn into pointcloud message
+    sensor_msgs::PointCloud msg;
+    msg.points = planePoints;
+    msg.header = info_msg->header; // TODO: potentially change the frame_id
 
+    this->pcl_pub_.publish(msg);        
 }
 
 // Converting single pixel to rays
@@ -163,7 +170,7 @@ cv::Point3f PCL_Converter::transformPointInverse(const cv::Point3f pt, const cv:
     return cv::Point3f(tfPt.at<double>(0),  tfPt.at<double>(1), tfPt.at<double>(2));
 }
 
-// Converting a Quaternion into a Rotation Matrix
+// Converting a Quaternion into a Rotation Matrix - Alternative
 void PCL_Converter::QtoRot(const geometry_msgs::Quaternion q, cv::Mat& rot){
 // from: https://automaticaddison.com/how-to-convert-a-quaternion-to-a-rotation-matrix/
     // cv::Mat rot;
@@ -176,12 +183,24 @@ void PCL_Converter::QtoRot(const geometry_msgs::Quaternion q, cv::Mat& rot){
     rot.at<double>(2,0) = 2 * ((q.x * q.z) - (q.w * q.y));
     rot.at<double>(2,1) = 2 * ((q.y * q.z) + (q.w * q.x));
     rot.at<double>(2,2) = 2 * (pow(q.w, 2) + pow(q.z, 2)) - 1.0;
+
+    /*
+        Alternative
+        #include <tf2/LinearMath/Matrix3x3.h>
+        tf2::Quaternion q;
+        tf2::Matrix3x3 m;
+        m.setRotation(q);
+
+
+    Another alternative here: https://answers.ros.org/question/358188/converting-cvmat-rotation-matrix-to-quaternion/
+    */
 }
 
 // Converting a transformStamped into a homogenous transform matrix
 void PCL_Converter::TransformToT(const geometry_msgs::TransformStamped transform, cv::Mat& T){
     cv::Mat rot;
     QtoRot(transform.transform.rotation, rot);
+    // Alternative inside code snippet
     T.at<double>(0,0) = rot.at<double>(0,0);
     T.at<double>(0,1) = rot.at<double>(0,1);
     T.at<double>(0,2) = rot.at<double>(0,2);
@@ -237,6 +256,36 @@ void PCL_Converter::calculatePlane(std::vector<cv::Point3d> points, std::vector<
     coeff.at(2) = c / fac;
     coeff.at(3) = d / fac;
     
+}
+
+// Calculating the intersection of a plane and a set of lines
+void linesPlaneIntersection(std::vector<cv::Point3d> rays, std::vector<float> plane, std::vector<geometry_msgs::Point32> intersections, cv::Point3d pointOnPlane){
+    cv::Point3f intersection;
+    geometry_msgs::Point32 msg;
+    cv::Point3d normal(plane.at(0), plane.at(1), plane.at(2));
+    for (int i=0; i < rays.size(); i++){
+        linePlaneIntersection(intersection, rays.at(i), cv::Point3d(0.0, 0.0, 0.0), normal, pointOnPlane);
+        msg.x = intersection.x;
+        msg.y = intersection.y;
+        msg.z = intersection.z;
+        // msg = geometry_msgs::Point32(intersection.x, intersection.y, intersection.z);
+        intersections.at(i) = msg; 
+    }
+}
+
+// calculating the intersection of a single line and a plane
+// From: https://stackoverflow.com/questions/7168484/3d-line-segment-and-plane-intersection
+void linePlaneIntersection(cv::Point3f& contact, cv::Point3d ray, cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord){
+
+    // getting the d - value
+    float d = normal.dot(coord);
+    
+    // computing the scale value x for the ray
+    float x = (d - normal.dot(rayOrigin)) / normal.dot(ray);
+    // TODO: since the ray origin is always at 0, the first dot product could be omitted
+
+    contact = rayOrigin + x * ray;
+
 }
 
 int main(int argc, char **argv){
