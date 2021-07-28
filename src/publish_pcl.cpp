@@ -18,7 +18,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 
-#include <geometry_msgs/TransformStamped.h>
+#include <geometry_msgs/TransformStamped.h>     // should already have QUaternion by inheritance
 #include <sensor_msgs/image_encodings.h>
 
 
@@ -36,6 +36,7 @@ private:
     tf2_ros::TransformListener tf_listener_;
     image_geometry::PinholeCameraModel cam_model_;
     std::string world_frame;
+    std::vector<cv::Point3d> plane;
 
 public:
     PCL_Converter(/* args */);
@@ -44,6 +45,10 @@ public:
     cv::Point2d homogenisePoint(int, int, double, double, double, double);
 
     cv::Point3f transformPointInverse(const cv::Point3f, const cv::Matx44f);
+    void QtoRot(const geometry_msgs::Quaternion, cv::Mat&);
+    void TransformToT(const geometry_msgs::TransformStamped, cv::Mat&);
+    std::vector<cv::Point3d> convertPts(const std::vector<cv::Point3d>,const cv::Mat);
+    void calculatePlane(std::vector<cv::Point3d>, std::vector<float>);
 };
 
 // Member functions
@@ -65,12 +70,9 @@ PCL_Converter::PCL_Converter(/* args */) : it_(nh_), tf_listener_(tfBuffer)
     nh_.param("plane/point1", plane_pt3, {1.f, 0.f, 0.f});
 
     // World plane vector
-    std::vector<cv::Point3d> plane;
     plane.push_back(cv::Point3f(plane_pt1));
     plane.push_back(cv::Point3f(plane_pt2));
     plane.push_back(cv::Point3f(plane_pt3));
-
-    
 }
 
 // Image Callback
@@ -110,11 +112,19 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     // TODO: theoretically, this can be done once
     std::vector<cv::Point3d> rays = convertPixelsToRays(width, height);
 
-    // use the transform and the points of the plane to convert between coordinate frames
+    // Convert OpenCV and ROS representations
+    cv::Mat T;
+    TransformToT(transform, T);
 
-    // calculate a new plane from the points
+    // Turn the plane points into the new coordinate frame
+    std::vector<cv::Point3d> newpts = convertPts(this->plane, T);
 
-    // Calculate the intersection of plane and points
+    // Calculate the new plane equation
+    std::vector<float> planecoeff;
+    calculatePlane(newpts, planecoeff);
+
+    // Calculate the intersection of plane and rays
+    
 
     // turn into pointcloud message
 
@@ -153,8 +163,81 @@ cv::Point3f PCL_Converter::transformPointInverse(const cv::Point3f pt, const cv:
     return cv::Point3f(tfPt.at<double>(0),  tfPt.at<double>(1), tfPt.at<double>(2));
 }
 
-// Computing the intersection of a plane and a ray
+// Converting a Quaternion into a Rotation Matrix
+void PCL_Converter::QtoRot(const geometry_msgs::Quaternion q, cv::Mat& rot){
+// from: https://automaticaddison.com/how-to-convert-a-quaternion-to-a-rotation-matrix/
+    // cv::Mat rot;
+    rot.at<double>(0,0) = 2 * (pow(q.w, 2) + pow(q.x, 2)) - 1.0;
+    rot.at<double>(0,1) = 2 * ((q.x * q.y) - (q.w * q.z));
+    rot.at<double>(0,2) = 2 * ((q.x * q.z) + (q.w * q.y));
+    rot.at<double>(1,0) = 2 * ((q.x * q.y) + (q.w * q.z));
+    rot.at<double>(1,1) = 2 * (pow(q.w, 2) + pow(q.y, 2)) - 1.0;
+    rot.at<double>(1,2) = 2 * ((q.y * q.z) - (q.w * q.x));
+    rot.at<double>(2,0) = 2 * ((q.x * q.z) - (q.w * q.y));
+    rot.at<double>(2,1) = 2 * ((q.y * q.z) + (q.w * q.x));
+    rot.at<double>(2,2) = 2 * (pow(q.w, 2) + pow(q.z, 2)) - 1.0;
+}
 
+// Converting a transformStamped into a homogenous transform matrix
+void PCL_Converter::TransformToT(const geometry_msgs::TransformStamped transform, cv::Mat& T){
+    cv::Mat rot;
+    QtoRot(transform.transform.rotation, rot);
+    T.at<double>(0,0) = rot.at<double>(0,0);
+    T.at<double>(0,1) = rot.at<double>(0,1);
+    T.at<double>(0,2) = rot.at<double>(0,2);
+    T.at<double>(0,3) = transform.transform.translation.x;
+    T.at<double>(1,0) = rot.at<double>(1,0);
+    T.at<double>(1,1) = rot.at<double>(1,1);
+    T.at<double>(1,2) = rot.at<double>(1,2);
+    T.at<double>(0,3) = transform.transform.translation.y;
+    T.at<double>(2,0) = rot.at<double>(2,0);
+    T.at<double>(2,1) = rot.at<double>(2,1);
+    T.at<double>(2,2) = rot.at<double>(2,2);
+    T.at<double>(2,3) = transform.transform.translation.z;
+    T.at<double>(3,0) = 0.0;
+    T.at<double>(3,1) = 0.0;
+    T.at<double>(3,2) = 0.0;
+    T.at<double>(3,3) = 1.0;
+}
+
+// Transforming 3 points of a plane into a new coordinate frame
+std::vector<cv::Point3d> PCL_Converter::convertPts(const std::vector<cv::Point3d> plane, const cv::Mat T){
+    std::vector<cv::Point3d> out(3);
+    for (int i=0; i<plane.size(); i++)
+    {
+        cv::Mat homPt = cv::Mat(plane.at(i));
+        homPt.push_back(1.0);
+        cv::Mat transformedPt = T * homPt;
+        cv::Point3d tfpt(transformedPt.at<double>(0), transformedPt.at<double>(1), transformedPt.at<double>(2));
+        out.at(i) = tfpt;
+    }
+    return out;
+}
+
+// Calculating a plane equation
+void PCL_Converter::calculatePlane(std::vector<cv::Point3d> points, std::vector<float> coeff){
+    cv::Point3f vec1, vec2, norm;
+    vec1 = points.at(1) - points.at(0);
+    vec2 = points.at(2) - points.at(0);
+    // normal
+    norm = vec1.cross(vec2);
+    
+    // plane equation
+    float a, b, c, d;
+
+    a = norm.x;
+    b = norm.y;
+    c = norm.z;
+    d = -(a * vec1.x + b * vec1.y + c * vec1.z);
+
+    // Double check whether this is correct
+    float fac = sqrt(norm.dot(norm));
+    coeff.at(0) = a / fac;
+    coeff.at(1) = b / fac;
+    coeff.at(2) = c / fac;
+    coeff.at(3) = d / fac;
+    
+}
 
 int main(int argc, char **argv){
     ros::init(argc, argv, "test_node");

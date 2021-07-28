@@ -12,9 +12,10 @@ find_package(catkin REQUIRED COMPONENTS
   image_geometry
   image_transport
   image_view
-  opencv2
   tf2
 )
+
+find_package(OpenCV REQUIRED)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
