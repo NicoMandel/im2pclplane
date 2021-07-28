@@ -15,7 +15,10 @@
 #include <opencv2/opencv.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <image_geometry/pinhole_camera_model.h>
-#include <tf/transform_listener.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+
+#include <geometry_msgs/TransformStamped.h>
 #include <sensor_msgs/image_encodings.h>
 
 
@@ -29,7 +32,8 @@ private:
     image_transport::ImageTransport it_;
     image_transport::CameraSubscriber sub_;
     ros::Publisher pcl_pub_;
-    tf::TransformListener tf_listener_;
+    tf2_ros::Buffer tfBuffer;
+    tf2_ros::TransformListener tf_listener_;
     image_geometry::PinholeCameraModel cam_model_;
     std::string world_frame;
 
@@ -43,7 +47,7 @@ public:
 };
 
 // Member functions
-PCL_Converter::PCL_Converter(/* args */) : it_(nh_)
+PCL_Converter::PCL_Converter(/* args */) : it_(nh_), tf_listener_(tfBuffer)
 {
     std::string image_topic;
     std::string pcl_topic;
@@ -65,6 +69,8 @@ PCL_Converter::PCL_Converter(/* args */) : it_(nh_)
     plane.push_back(cv::Point3f(plane_pt1));
     plane.push_back(cv::Point3f(plane_pt2));
     plane.push_back(cv::Point3f(plane_pt3));
+
+    
 }
 
 // Image Callback
@@ -89,13 +95,12 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     cam_model_.fromCameraInfo(info_msg);
 
     // look up the transform of the camera in the world frame
-    tf::StampedTransform transform;
+    geometry_msgs::TransformStamped transform;
     try{
         ros::Time image_time = info_msg->header.stamp;
         ros::Duration timeout(1.0 / 30);
-        tf_listener_.waitForTransform(cam_model_.tfFrame(), this->world_frame, image_time, timeout);
-        tf_listener_.lookupTransform(cam_model_.tfFrame(), this->world_frame, image_time, transform);
-    } catch(tf::TransformException& ex){
+        transform = tfBuffer.lookupTransform(cam_model_.tfFrame(), this->world_frame, image_time, timeout);
+    } catch(tf2::TransformException& ex){
         ROS_WARN("Failed to get transform from %s to %s", cam_model_.tfFrame(), this->world_frame);
         return;
     }

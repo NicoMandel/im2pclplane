@@ -54,19 +54,19 @@
   <build_depend>image_transport</build_depend>
   <build_depend>image_view</build_depend>
   <build_depend>opencv2</build_depend>
-  <build_depend>tf</build_depend>
+  <build_depend>tf2</build_depend>
   <build_export_depend>cv_bridge</build_export_depend>
   <build_export_depend>image_geometry</build_export_depend>
   <build_export_depend>image_transport</build_export_depend>
   <build_export_depend>image_view</build_export_depend>
   <build_export_depend>opencv2</build_export_depend>
-  <build_export_depend>tf</build_export_depend>
+  <build_export_depend>tf2</build_export_depend>
   <exec_depend>cv_bridge</exec_depend>
   <exec_depend>image_geometry</exec_depend>
   <exec_depend>image_transport</exec_depend>
   <exec_depend>image_view</exec_depend>
   <exec_depend>opencv2</exec_depend>
-  <exec_depend>tf</exec_depend>
+  <exec_depend>tf2</exec_depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->

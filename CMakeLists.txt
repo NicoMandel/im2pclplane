@@ -13,7 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   image_transport
   image_view
   opencv2
-  tf
+  tf2
 )
 
 ## System dependencies are found with CMake's conventions
