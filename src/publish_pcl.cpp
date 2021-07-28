@@ -36,7 +36,9 @@ public:
     PCL_Converter(/* args */);
     void imageCb(const sensor_msgs::ImageConstPtr&, const sensor_msgs::CameraInfoConstPtr&);
     std::vector<cv::Point3d> convertPixelsToRays(int, int);
-    cv::Point2d rectifyPoint(int, int, double, double, double, double);
+    cv::Point2d homogenisePoint(int, int, double, double, double, double);
+
+    cv::Point3f transformPointInverse(const cv::Point3f, const cv::Matx44f);
 };
 
 // Member functions
@@ -131,12 +133,21 @@ std::vector<cv::Point3d> PCL_Converter::convertPixelsToRays(int width, int heigh
 }
 
 // Converting image coordinate to rectified Point
-cv::Point2d PCL_Converter::rectifyPoint(int x, int y, double cx, double cy, double fx, double fy){
+cv::Point2d PCL_Converter::homogenisePoint(int x, int y, double cx, double cy, double fx, double fy){
     cv::Point2d rect;
     rect.x = (x - cx) / fx;
     rect.y = (y - cy) / fy;
     return rect;
 }
+
+// Transforming a point into another coordinate frame 
+cv::Point3f PCL_Converter::transformPointInverse(const cv::Point3f pt, const cv::Matx44f T){
+    cv::Mat homogenous_3dPt = (cv::Mat_<double>(4, 1) << pt.x, pt.y, pt.z, 1.0);
+    cv::Mat tfPt = T * homogenous_3dPt;
+    return cv::Point3f(tfPt.at<double>(0),  tfPt.at<double>(1), tfPt.at<double>(2));
+}
+
+// Computing the intersection of a plane and a ray
 
 
 int main(int argc, char **argv){
