@@ -1,0 +1,16 @@
+pcl_topic: "pcl_plane"
+world_frame: "map"
+
+plane:
+  point1:
+    - 0.0
+    - 0.0
+    - 0.0
+  point2:
+    - 0.0
+    - 1.0
+    - 0.0
+  point3:
+    - 1.0
+    - 0.0 
+    - 0.0
