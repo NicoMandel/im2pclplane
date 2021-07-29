@@ -51,6 +51,7 @@ public:
     void calculatePlane(std::vector<cv::Point3d>, std::vector<float>&);
     void linesPlaneIntersection(std::vector<cv::Point3d> rays, std::vector<float> plane, std::vector<geometry_msgs::Point32> &intersections, cv::Point3d pointOnPlane);
     void linePlaneIntersection(cv::Point3f& contact, cv::Point3d ray, cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord);
+    void logTransform(const geometry_msgs::TransformStamped) const;
 };
 
 // Member functions
@@ -105,6 +106,7 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
         ros::Time image_time = info_msg->header.stamp;
         ros::Duration timeout(1.0 / 30);
         transform = tfBuffer.lookupTransform(cam_model_.tfFrame(), this->world_frame, image_time, timeout);
+        logTransform(transform);
     } catch(tf2::TransformException& ex){
         ROS_WARN("Failed to get transform from %s to %s", cam_model_.tfFrame().c_str(), this->world_frame.c_str());
         return;
@@ -286,6 +288,16 @@ void PCL_Converter::linePlaneIntersection(cv::Point3f& contact, cv::Point3d ray,
     // TODO: since the ray origin is always at 0, the first dot product could be omitted
 
     contact = rayOrigin + x * ray;
+}
+
+// Debugging functions:
+void PCL_Converter::logTransform(const geometry_msgs::TransformStamped transform) const {
+    ROS_INFO("Transform from %s to %s\n\tx: %f\n\ty: %f\n\tz: %f\n\tw: %f\n\trx: %f\n\try: %f\n\trz: %f\n",
+                transform.header.frame_id.c_str(),
+                transform.child_frame_id.c_str(),
+                transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z,
+                transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z
+            );
 }
 
 int main(int argc, char **argv){
