@@ -62,7 +62,7 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
     nh_.param("pcl_topic", pcl_topic, std::string("pcl_plane"));
     nh_.param("world_frame", this->world_frame, std::string("map"));
     sub_ = it_.subscribeCamera(image_topic, 1, &PCL_Converter::imageCb, this);
-    pcl_pub_ = nh_.advertise<sensor_msgs::PointCloud>("pcl", 1);
+    pcl_pub_ = nh_.advertise<sensor_msgs::PointCloud>(pcl_topic, 1);
 
     // world plane points
     // TODO: see if this throws an error
