@@ -58,7 +58,7 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
 {
     std::string image_topic;
     std::string pcl_topic;
-    image_topic = nh_.resolveName("image");
+    image_topic = nh_.resolveName("hbv_1615/image_color");
     nh_.param("pcl_topic", pcl_topic, std::string("pcl_plane"));
     nh_.param("world_frame", this->world_frame, std::string("map"));
     sub_ = it_.subscribeCamera(image_topic, 1, &PCL_Converter::imageCb, this);
@@ -89,8 +89,8 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
         input_bridge = cv_bridge::toCvCopy(image_msg, sensor_msgs::image_encodings::BGR8);
         image = input_bridge->image;
         // TODO: check whether these two are the right way around
-        width = image.size[0];
-        height = image.size[1];
+        width = image.size[1];
+        height = image.size[0];
     } catch(cv_bridge::Exception& ex){
         ROS_ERROR("Failed to convert image");
         return;
