@@ -48,8 +48,8 @@ public:
     void QtoRot(const geometry_msgs::Quaternion, cv::Mat&);
     void TransformToT(const geometry_msgs::TransformStamped, cv::Mat&);
     std::vector<cv::Point3d> convertPts(const std::vector<cv::Point3d>,const cv::Mat);
-    void calculatePlane(std::vector<cv::Point3d>, std::vector<float>);
-    void linesPlaneIntersection(std::vector<cv::Point3d> rays, std::vector<float> plane, std::vector<geometry_msgs::Point32> intersections, cv::Point3d pointOnPlane);
+    void calculatePlane(std::vector<cv::Point3d>, std::vector<float>&);
+    void linesPlaneIntersection(std::vector<cv::Point3d> rays, std::vector<float> plane, std::vector<geometry_msgs::Point32> &intersections, cv::Point3d pointOnPlane);
     void linePlaneIntersection(cv::Point3f& contact, cv::Point3d ray, cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord);
 };
 
@@ -116,18 +116,18 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     std::vector<cv::Point3d> rays = convertPixelsToRays(width, height);
 
     // Convert OpenCV and ROS representations
-    cv::Mat T;
+    cv::Mat T = cv::Mat_<double>(4,4);
     TransformToT(transform, T);
 
     // Turn the plane points into the new coordinate frame
     std::vector<cv::Point3d> newpts = convertPts(this->plane, T);
 
     // Calculate the new plane equation
-    std::vector<float> planecoeff;
+    std::vector<float> planecoeff(4);
     calculatePlane(newpts, planecoeff);
 
     // Calculate the intersection of plane and rays
-    std::vector<geometry_msgs::Point32> planePoints;
+    std::vector<geometry_msgs::Point32> planePoints(rays.size());
     linesPlaneIntersection(rays, planecoeff, planePoints, newpts.at(0));
 
     // turn into pointcloud message
@@ -199,7 +199,7 @@ void PCL_Converter::QtoRot(const geometry_msgs::Quaternion q, cv::Mat& rot){
 
 // Converting a transformStamped into a homogenous transform matrix
 void PCL_Converter::TransformToT(const geometry_msgs::TransformStamped transform, cv::Mat& T){
-    cv::Mat rot;
+    cv::Mat rot = cv::Mat_<double>(3, 3);
     QtoRot(transform.transform.rotation, rot);
     // Alternative inside code snippet
     T.at<double>(0,0) = rot.at<double>(0,0);
@@ -235,7 +235,7 @@ std::vector<cv::Point3d> PCL_Converter::convertPts(const std::vector<cv::Point3d
 }
 
 // Calculating a plane equation
-void PCL_Converter::calculatePlane(std::vector<cv::Point3d> points, std::vector<float> coeff){
+void PCL_Converter::calculatePlane(std::vector<cv::Point3d> points, std::vector<float> &coeff){
     cv::Point3f vec1, vec2, norm;
     vec1 = points.at(1) - points.at(0);
     vec2 = points.at(2) - points.at(0);
@@ -260,7 +260,7 @@ void PCL_Converter::calculatePlane(std::vector<cv::Point3d> points, std::vector<
 }
 
 // Calculating the intersection of a plane and a set of lines
-void PCL_Converter::linesPlaneIntersection(std::vector<cv::Point3d> rays, std::vector<float> plane, std::vector<geometry_msgs::Point32> intersections, cv::Point3d pointOnPlane){
+void PCL_Converter::linesPlaneIntersection(std::vector<cv::Point3d> rays, std::vector<float> plane, std::vector<geometry_msgs::Point32>& intersections, cv::Point3d pointOnPlane){
     cv::Point3f intersection;
     geometry_msgs::Point32 msg;
     cv::Point3d normal(plane.at(0), plane.at(1), plane.at(2));
