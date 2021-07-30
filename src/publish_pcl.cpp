@@ -36,11 +36,12 @@ private:
     image_geometry::PinholeCameraModel cam_model_;
     std::string world_frame;
     std::vector<cv::Point3d> plane;
+    std::vector<cv::Point3d> rays;
 
 public:
     PCL_Converter(/* args */);
     void imageCb(const sensor_msgs::ImageConstPtr&, const sensor_msgs::CameraInfoConstPtr&);
-    std::vector<cv::Point3d> convertPixelsToRays(int, int);
+    std::vector<cv::Point3d> convertPixelsToRays(int width, int height);
     cv::Point2d homogenisePoint(int, int, double, double, double, double);
 
     cv::Point3f transformPointInverse(const cv::Point3f, const cv::Matx44f);
@@ -48,8 +49,8 @@ public:
     void TransformToT(const geometry_msgs::TransformStamped, cv::Mat&);
     std::vector<cv::Point3d> convertPts(const std::vector<cv::Point3d>,const cv::Mat);
     void calculatePlane(std::vector<cv::Point3d>, std::vector<float>&);
-    void linesPlaneIntersection(std::vector<cv::Point3d> rays, std::vector<float> plane, std::vector<geometry_msgs::Point32> &intersections, cv::Point3d pointOnPlane);
-    void linePlaneIntersection(cv::Point3f& contact, cv::Point3d ray, cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord);
+    void linesPlaneIntersection(const std::vector<cv::Point3d> rays, const std::vector<float> plane, std::vector<geometry_msgs::Point32> &intersections, cv::Point3d pointOnPlane);
+    void linePlaneIntersection(cv::Point3f& contact, const cv::Point3d ray, const cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord);
     void logTransform(const geometry_msgs::TransformStamped) const;
 };
 
@@ -76,6 +77,14 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
     plane.push_back(cv::Point3f(pt1.at(0), pt1.at(1), pt1.at(2)));
     plane.push_back(cv::Point3f(pt2.at(0), pt2.at(1), pt2.at(2)));
     plane.push_back(cv::Point3f(pt3.at(0), pt3.at(1), pt3.at(2)));
+
+    // Getting the Camera model - preallocation
+    sensor_msgs::CameraInfoConstPtr info;
+    info = ros::topic::waitForMessage<sensor_msgs::CameraInfo>("/hbv_1615/camera_info", ros::Duration(3.0));
+    cam_model_.fromCameraInfo(info);
+
+    // Assigning the rays - preallocation
+    rays = convertPixelsToRays(info->width, info->height);
 }
 
 // Image Callback
@@ -83,21 +92,21 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
 
     // Convert image
     cv::Mat image;
-    int width, height;
+    // int width, height;
     cv_bridge::CvImagePtr input_bridge;
     try{
         input_bridge = cv_bridge::toCvCopy(image_msg, sensor_msgs::image_encodings::BGR8);
         image = input_bridge->image;
         // TODO: check whether these two are the right way around
-        width = image.size[1];
-        height = image.size[0];
+        // width = image.size[1];
+        // height = image.size[0];
     } catch(cv_bridge::Exception& ex){
         ROS_ERROR("Failed to convert image");
         return;
     }
     
     // create a camera model from the camera info - apparently cheap
-    cam_model_.fromCameraInfo(info_msg);
+    // cam_model_.fromCameraInfo(info_msg);
 
     // look up the transform of the camera in the world frame
     geometry_msgs::TransformStamped transform;
@@ -111,10 +120,8 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
         return;
     }
 
-    // Get a ray for each pixel
-    // TODO: Preallocate vector for speed
-    // TODO: theoretically, this can be done once -> only the 3 points for the plane need to be converted anew
-    std::vector<cv::Point3d> rays = convertPixelsToRays(width, height);
+    // Get a ray for each pixel - Preallocated
+    // std::vector<cv::Point3d> rays = convertPixelsToRays(width, height);
 
     // Convert OpenCV and ROS representations
     cv::Mat T = cv::Mat_<double>(4,4);
@@ -129,7 +136,7 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
 
     // Calculate the intersection of plane and rays
     std::vector<geometry_msgs::Point32> planePoints(rays.size());
-    linesPlaneIntersection(rays, planecoeff, planePoints, newpts.at(0));
+    linesPlaneIntersection(this->rays, planecoeff, planePoints, newpts.at(0));
 
     // turn into pointcloud message
     sensor_msgs::PointCloud msg;
@@ -193,6 +200,7 @@ void PCL_Converter::QtoRot(const geometry_msgs::Quaternion q, cv::Mat& rot){
         tf2::Matrix3x3 m;
         m.setRotation(q);
 
+        alternative: use the python definition with the outer product - see the python file
 
     Another alternative here: https://answers.ros.org/question/358188/converting-cvmat-rotation-matrix-to-quaternion/
     */
@@ -236,7 +244,7 @@ std::vector<cv::Point3d> PCL_Converter::convertPts(const std::vector<cv::Point3d
 }
 
 // Calculating a plane equation
-void PCL_Converter::calculatePlane(std::vector<cv::Point3d> points, std::vector<float> &coeff){
+void PCL_Converter::calculatePlane(const std::vector<cv::Point3d> points, std::vector<float> &coeff){
     cv::Point3f vec1, vec2, norm;
     vec1 = points.at(1) - points.at(0);
     vec2 = points.at(2) - points.at(0);
@@ -261,7 +269,7 @@ void PCL_Converter::calculatePlane(std::vector<cv::Point3d> points, std::vector<
 }
 
 // Calculating the intersection of a plane and a set of lines
-void PCL_Converter::linesPlaneIntersection(std::vector<cv::Point3d> rays, std::vector<float> plane, std::vector<geometry_msgs::Point32>& intersections, cv::Point3d pointOnPlane){
+void PCL_Converter::linesPlaneIntersection(const std::vector<cv::Point3d> rays, const std::vector<float> plane, std::vector<geometry_msgs::Point32>& intersections, cv::Point3d pointOnPlane){
     cv::Point3f intersection;
     geometry_msgs::Point32 msg;
     cv::Point3d normal(plane.at(0), plane.at(1), plane.at(2));
@@ -277,7 +285,7 @@ void PCL_Converter::linesPlaneIntersection(std::vector<cv::Point3d> rays, std::v
 
 // calculating the intersection of a single line and a plane
 // From: https://stackoverflow.com/questions/7168484/3d-line-segment-and-plane-intersection
-void PCL_Converter::linePlaneIntersection(cv::Point3f& contact, cv::Point3d ray, cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord){
+void PCL_Converter::linePlaneIntersection(cv::Point3f& contact, const cv::Point3d ray, const cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord){
 
     // getting the d - value
     float d = normal.dot(coord);
