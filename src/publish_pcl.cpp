@@ -55,7 +55,7 @@ public:
     cv::Mat convertPts(cv::Mat);
     Eigen::MatrixXd convertPts(Eigen::MatrixXd , Eigen::Matrix4d);
     void calculatePlane(cv::Mat, std::vector<float>&);
-    void calculatePlane(Eigen::Matrix3d, Eigen::Vector4d&);
+    Eigen::Vector4d calculatePlane(Eigen::Matrix3d);
     void linesPlaneIntersection(std::vector<float> plane, std::vector<geometry_msgs::Point32> &intersections, cv::Point3d pointOnPlane, cv::Point3d rayOrigin);
     void linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin);
     void linePlaneIntersection(cv::Point3d& contact, cv::Point3d ray, cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord);
@@ -96,7 +96,7 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
     
     // Convert the World plane into a cv::matrix - COLUMN VECTORS - so that the matrix multiplication can happen naturally
     this->world_plane = convertVecToMat(plane);
-    printMat(this->world_plane, std::string("World Plane"));
+    // printMat(this->world_plane, std::string("World Plane"));
 
     // Getting the Camera model - preallocation
     sensor_msgs::CameraInfoConstPtr info;
@@ -149,16 +149,16 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     Eigen::MatrixXd newplane = convertPts(this->world_plane, T);
     printMat(newplane, std::string("New Plane"));
     Eigen::Matrix3d nplane = newplane.topLeftCorner<3,3>();
-    printMat(newplane, std::string("New Plane after dropping last row"));
+    printMat(nplane, std::string("New Plane after dropping last row"));
 
     // Calculate the new plane equation
-    Eigen::Vector4d planecoeff;
-    calculatePlane(nplane, planecoeff);
+    Eigen::Vector4d planecoeff = calculatePlane(nplane);
     printMat(planecoeff, "Plane Coefficients");
 
     // Calculate the intersection of plane and rays
     std::vector<geometry_msgs::Point32> planePoints(rays.size());
     Eigen::Vector3d coordinate = nplane.col(0);
+    printMat(coordinate, "coordinate vector");
     Eigen::Vector3d rayOrigin(0.0, 0.0, 0.0);
     linesPlaneIntersection(planecoeff, planePoints, coordinate, rayOrigin);
 
@@ -345,7 +345,7 @@ void PCL_Converter::calculatePlane(cv::Mat newplane, std::vector<float> &coeff){
 }
 
 // Calculating plane equation using eigen
-void PCL_Converter::calculatePlane(Eigen::Matrix3d newplane, Eigen::Vector4d& factors){
+ Eigen::Vector4d PCL_Converter::calculatePlane(Eigen::Matrix3d newplane){
     // The last row should be full of ones
     // only takes the first 3 columns as points
     // Eigen::Matrix3d pts = newplane.block<3,3>(0,0);
@@ -353,13 +353,14 @@ void PCL_Converter::calculatePlane(Eigen::Matrix3d newplane, Eigen::Vector4d& fa
     Eigen::Vector3d vec2 = newplane.col(2) - newplane.col(0);
     
     Eigen::Vector3d norm = vec1.cross(vec2);
-    factors << norm;
     
-    factors(3) = -(norm(0) * vec1(0) + norm(1) *  vec1(1) + norm(2) * vec1(2)); 
+    double d = -(norm(0) * vec1(0) + norm(1) *  vec1(1) + norm(2) * vec1(2)); 
     // double f = -(vec1.dot(norm));          // should be equivalent
 
     double fac  = sqrt(norm.dot(norm));
+    Eigen::Vector4d factors(norm(0), norm(1), norm(2), d);
     factors /= fac;
+    return factors;
 }
 
 // Calculating the intersection of a plane and a set of lines
@@ -428,7 +429,10 @@ cv::Mat PCL_Converter::convertVecToMat(std::vector<cv::Point3f> plane_pts){
 Eigen::MatrixXd PCL_Converter::convertVecToMat(std::vector<Eigen::Vector3d> plane_pts){
     Eigen::MatrixXd mat(4, plane_pts.size());
     for (int col = 0; col<plane_pts.size(); col++){
-        mat.col(col) = plane_pts.at(col);
+        mat(0,col) = plane_pts.at(col)(0);
+        mat(1,col) = plane_pts.at(col)(1);
+        mat(2,col) = plane_pts.at(col)(2);
+        mat(3,col) = 1;
     }
     return mat;
 }
@@ -449,7 +453,7 @@ void PCL_Converter::printMat(cv::Mat matrix, std::string name = ""){
 }
 
 void PCL_Converter::printMat(Eigen::MatrixXd mat, std::string name = ""){
-    std::cout << "Matrix: " << name << std::endl << " " << mat << std::endl;
+    std::cout << "Matrix: " << name << std::endl <<  mat << std::endl;
 }
 
 
