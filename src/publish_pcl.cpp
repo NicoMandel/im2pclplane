@@ -214,8 +214,8 @@ Eigen::Vector4d PCL_Converter::calculatePlane(Eigen::Matrix3d newplane){
     
     Eigen::Vector3d norm = vec1.cross(vec2);
     
-    double d = -(norm(0) * vec1(0) + norm(1) *  vec1(1) + norm(2) * vec1(2)); 
-    // double f = -(vec1.dot(norm));          // should be equivalent
+    // double d = -(norm(0) * vec1(0) + norm(1) *  vec1(1) + norm(2) * vec1(2)); 
+    double d = -(vec1.dot(norm));          // should be equivalent
 
     double fac  = sqrt(norm.dot(norm));
     Eigen::Vector4d factors(norm(0), norm(1), norm(2), d);
