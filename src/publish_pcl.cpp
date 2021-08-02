@@ -19,7 +19,8 @@
 #include <tf2_ros/transform_listener.h>
 #include <geometry_msgs/TransformStamped.h>     // should already have QUaternion by inheritance
 #include <sensor_msgs/image_encodings.h>
-
+#include <Eigen/Geometry>
+#include <Eigen/Dense>
 
 // own imports
 #include <sensor_msgs/PointCloud.h>
@@ -35,28 +36,37 @@ private:
     tf2_ros::TransformListener tf_listener_;
     image_geometry::PinholeCameraModel cam_model_;
     std::string world_frame;
-    cv::Mat world_plane;
-    std::vector<cv::Point3d> rays;
+    Eigen::MatrixXd world_plane;
+    std::vector<Eigen::Vector3d> rays;
 
 public:
     PCL_Converter(/* args */);
     void imageCb(const sensor_msgs::ImageConstPtr&, const sensor_msgs::CameraInfoConstPtr&);
     void convertPixelsToRays(int width, int height, std::vector<cv::Point3d>& rays);
-    cv::Point3d pixelToRay(int u, int v, double cx, double cy, double fx, double fy);
-    cv::Point2d homogenisePoint(int, int, double, double, double, double);
+    void convertPixelsToRays(int width, int height, std::vector<Eigen::Vector3d>& rays);
+    Eigen::Vector3d pixelToRay(int u, int v, double cx, double cy, double fx, double fy);
+    // cv::Point2d homogenisePoint(int, int, double, double, double, double);
 
     cv::Point3f transformPointInverse(cv::Point3f, cv::Matx44f);
     void QtoRot(geometry_msgs::Quaternion, cv::Mat&);
+    void QtoRot(geometry_msgs::Quaternion q, Eigen::Matrix3d& R);
     void TransformToT(geometry_msgs::TransformStamped, cv::Mat&);
+    void TransformToT(geometry_msgs::TransformStamped, Eigen::Matrix4d&);
     cv::Mat convertPts(cv::Mat);
+    Eigen::MatrixXd convertPts(Eigen::MatrixXd , Eigen::Matrix4d);
     void calculatePlane(cv::Mat, std::vector<float>&);
+    void calculatePlane(Eigen::Matrix3d, Eigen::Vector4d&);
     void linesPlaneIntersection(std::vector<float> plane, std::vector<geometry_msgs::Point32> &intersections, cv::Point3d pointOnPlane, cv::Point3d rayOrigin);
+    void linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin);
     void linePlaneIntersection(cv::Point3d& contact, cv::Point3d ray, cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord);
+    void linePlaneIntersection(Eigen::Vector3d& contact, Eigen::Vector3d ray, Eigen::Vector3d rayOrigin, Eigen::Vector3d normal, Eigen::Vector3d coord);
     cv::Mat convertVecToMat(std::vector<cv::Point3f>);
+    Eigen::MatrixXd convertVecToMat(std::vector<Eigen::Vector3d>);
 
     // debugging utilties
     void logTransform(geometry_msgs::TransformStamped);
     void printMat(cv::Mat, std::string);
+    void printMat(Eigen::MatrixXd, std::string);
 };
 
 // Member functions
@@ -79,13 +89,14 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
     nh_.param("plane/point1", pt3, {1.f, 0.f, 0.f});
 
     // World plane vector
-    std::vector<cv::Point3f> plane;
-    plane.push_back(cv::Point3f(pt1.at(0), pt1.at(1), pt1.at(2)));
-    plane.push_back(cv::Point3f(pt2.at(0), pt2.at(1), pt2.at(2)));
-    plane.push_back(cv::Point3f(pt3.at(0), pt3.at(1), pt3.at(2)));
+    std::vector<Eigen::Vector3d> plane;
+    plane.push_back(Eigen::Vector3d(pt1.at(0), pt1.at(1), pt1.at(2)));
+    plane.push_back(Eigen::Vector3d(pt2.at(0), pt2.at(1), pt2.at(2)));
+    plane.push_back(Eigen::Vector3d(pt3.at(0), pt3.at(1), pt3.at(2)));
     
     // Convert the World plane into a cv::matrix - COLUMN VECTORS - so that the matrix multiplication can happen naturally
     this->world_plane = convertVecToMat(plane);
+    printMat(this->world_plane, std::string("World Plane"));
 
     // Getting the Camera model - preallocation
     sensor_msgs::CameraInfoConstPtr info;
@@ -93,7 +104,7 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
     this->cam_model_.fromCameraInfo(info);
 
     // Assigning the rays - preallocation
-    this->rays = std::vector<cv::Point3d>(info->width * info->height);
+    this->rays = std::vector<Eigen::Vector3d>(info->width * info->height);
     convertPixelsToRays(info->width, info->height, this->rays);
     ROS_INFO("Initialized point cloud class");
 }
@@ -129,22 +140,26 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     }
 
     // Convert OpenCV and ROS representations
-    cv::Mat T = cv::Mat_<double>(4,4);
+    Eigen::Matrix4d T;
+    
     TransformToT(transform, T);
     printMat(T, std::string("T "));
 
     // Turn the plane points into the new coordinate frame
-    cv::Mat newplane = convertPts(T);
+    Eigen::MatrixXd newplane = convertPts(this->world_plane, T);
     printMat(newplane, std::string("New Plane"));
+    Eigen::Matrix3d nplane = newplane.topLeftCorner<3,3>();
+    printMat(newplane, std::string("New Plane after dropping last row"));
 
     // Calculate the new plane equation
-    std::vector<float> planecoeff(4);
-    calculatePlane(newplane, planecoeff);
+    Eigen::Vector4d planecoeff;
+    calculatePlane(nplane, planecoeff);
+    printMat(planecoeff, "Plane Coefficients");
 
     // Calculate the intersection of plane and rays
     std::vector<geometry_msgs::Point32> planePoints(rays.size());
-    cv::Point3d coordinate(newplane.col(0).rowRange(0,3));
-    cv::Point3d rayOrigin(0.0, 0.0, 0.0);
+    Eigen::Vector3d coordinate = nplane.col(0);
+    Eigen::Vector3d rayOrigin(0.0, 0.0, 0.0);
     linesPlaneIntersection(planecoeff, planePoints, coordinate, rayOrigin);
 
     // turn into pointcloud message
@@ -157,7 +172,23 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
 }
 
 // Converting single pixel to rays
-void PCL_Converter::convertPixelsToRays(int width, int height, std::vector<cv::Point3d> &rays){
+// void PCL_Converter::convertPixelsToRays(int width, int height, std::vector<cv::Point3d> &rays){
+//     double cx = this->cam_model_.cx();
+//     double cy = this->cam_model_.cy();
+//     double fx = this->cam_model_.fx();
+//     double fy = this->cam_model_.fy();
+
+//     for (int y=0; y < height; y++){
+//         for (int x=0; x < width; x++){
+//             // cv::Point3d ray = pixelToRay(x, y, cx, cy, fx, fy);
+//             int index = y * width + x;
+//             rays.at(index) = ray;
+//         }
+//     }
+// }
+
+// Converting a single pixel to a ray - with Eigen
+void PCL_Converter::convertPixelsToRays(int width, int height, std::vector<Eigen::Vector3d> &rays){
     double cx = this->cam_model_.cx();
     double cy = this->cam_model_.cy();
     double fx = this->cam_model_.fx();
@@ -165,7 +196,7 @@ void PCL_Converter::convertPixelsToRays(int width, int height, std::vector<cv::P
 
     for (int y=0; y < height; y++){
         for (int x=0; x < width; x++){
-            cv::Point3d ray = pixelToRay(x, y, cx, cy, fx, fy);
+            Eigen::Vector3d ray = pixelToRay(x, y, cx, cy, fx, fy);
             int index = y * width + x;
             rays.at(index) = ray;
         }
@@ -173,24 +204,24 @@ void PCL_Converter::convertPixelsToRays(int width, int height, std::vector<cv::P
 }
 
 // Converting a single pixel to a ray - following the definition of the python class
-cv::Point3d PCL_Converter::pixelToRay(int u, int v, double cx, double cy, double fx, double fy){
+Eigen::Vector3d PCL_Converter::pixelToRay(int u, int v, double cx, double cy, double fx, double fy){
     double x = (u - cx) / fx;
     double y = (v - cy) / fy;
     float norm = sqrt(x*x + y*y);
     x /= norm;
     y /= norm;
     double z = 1.0 / norm;
-    cv::Point3d point(x, y, z);
+    Eigen::Vector3d point(x, y, z);
     return point;
 }
 
 // Converting image coordinate to rectified Point
-cv::Point2d PCL_Converter::homogenisePoint(int x, int y, double cx, double cy, double fx, double fy){
-    cv::Point2d rect;
-    rect.x = (x - cx) / fx;
-    rect.y = (y - cy) / fy;
-    return rect;
-}
+// cv::Point2d PCL_Converter::homogenisePoint(int x, int y, double cx, double cy, double fx, double fy){
+//     cv::Point2d rect;
+//     rect.x = (x - cx) / fx;
+//     rect.y = (y - cy) / fy;
+//     return rect;
+// }
 
 // Transforming a point into another coordinate frame 
 cv::Point3f PCL_Converter::transformPointInverse( cv::Point3f pt,  cv::Matx44f T){
@@ -203,6 +234,8 @@ cv::Point3f PCL_Converter::transformPointInverse( cv::Point3f pt,  cv::Matx44f T
 void PCL_Converter::QtoRot( geometry_msgs::Quaternion q, cv::Mat& rot){
 // from: https://automaticaddison.com/how-to-convert-a-quaternion-to-a-rotation-matrix/
     // cv::Mat rot;
+    cv::Mat quat = cv::Mat_<double>(4,1);
+    cv::Mat outer = quat.t() * quat;
     rot.at<double>(0,0) = 2 * (pow(q.w, 2) + pow(q.x, 2)) - 1.0;
     rot.at<double>(0,1) = 2 * ((q.x * q.y) - (q.w * q.z));
     rot.at<double>(0,2) = 2 * ((q.x * q.z) + (q.w * q.y));
@@ -212,18 +245,26 @@ void PCL_Converter::QtoRot( geometry_msgs::Quaternion q, cv::Mat& rot){
     rot.at<double>(2,0) = 2 * ((q.x * q.z) - (q.w * q.y));
     rot.at<double>(2,1) = 2 * ((q.y * q.z) + (q.w * q.x));
     rot.at<double>(2,2) = 2 * (pow(q.w, 2) + pow(q.z, 2)) - 1.0;
-
+    
+    
     /*
         Alternative
         #include <tf2/LinearMath/Matrix3x3.h>
         tf2::Quaternion q;
         tf2::Matrix3x3 m;
-        m.setRotation(q);
+        m.setRotation(q);    // TODO: since the ray origin is always at 0, the first dot product **could** be omitted
+
 
         alternative: use the python definition with the outer product - see the python file
 
     Another alternative here: https://answers.ros.org/question/358188/converting-cvmat-rotation-matrix-to-quaternion/
     */
+}
+
+// COnverting between Quaternion and Rotation Matrix
+void PCL_Converter::QtoRot(geometry_msgs::Quaternion q, Eigen::Matrix3d& R){
+    Eigen::Quaterniond quat(q.w, q.x, q.y, q.z);
+    R = quat.toRotationMatrix();
 }
 
 // Converting a transformStamped into a homogenous transform matrix
@@ -249,12 +290,29 @@ void PCL_Converter::TransformToT( geometry_msgs::TransformStamped transform, cv:
     T.at<double>(3,3) = 1.0;
 }
 
+// Eigen implementation of the transformation
+void PCL_Converter::TransformToT( geometry_msgs::TransformStamped transform, Eigen::Matrix4d& T){
+    Eigen::Matrix3d rot;
+    QtoRot(transform.transform.rotation, rot);
+    Eigen::Vector3d t;
+    t << transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z;
+    Eigen::RowVector4d zeros(0.0, 0.0, 0.0, 1.0);
+    T << rot, t, zeros;
+}
+
 // Transforming 3 points of a plane into a new coordinate frame
 cv::Mat PCL_Converter::convertPts(cv::Mat T){
     cv::Mat out;
-    out = T * this->world_plane;
+    // out = T * this->world_plane;
     return out;
 }
+
+Eigen::MatrixXd PCL_Converter::convertPts(Eigen::MatrixXd pts, Eigen::Matrix4d T){
+    Eigen::MatrixXd out;
+    out = T * pts;
+    return out;
+}
+
 
 // Calculating a plane equation
 void PCL_Converter::calculatePlane(cv::Mat newplane, std::vector<float> &coeff){
@@ -286,13 +344,31 @@ void PCL_Converter::calculatePlane(cv::Mat newplane, std::vector<float> &coeff){
     coeff.at(3) = d / fac;
 }
 
+// Calculating plane equation using eigen
+void PCL_Converter::calculatePlane(Eigen::Matrix3d newplane, Eigen::Vector4d& factors){
+    // The last row should be full of ones
+    // only takes the first 3 columns as points
+    // Eigen::Matrix3d pts = newplane.block<3,3>(0,0);
+    Eigen::Vector3d vec1 = newplane.col(1) - newplane.col(0);
+    Eigen::Vector3d vec2 = newplane.col(2) - newplane.col(0);
+    
+    Eigen::Vector3d norm = vec1.cross(vec2);
+    factors << norm;
+    
+    factors(3) = -(norm(0) * vec1(0) + norm(1) *  vec1(1) + norm(2) * vec1(2)); 
+    // double f = -(vec1.dot(norm));          // should be equivalent
+
+    double fac  = sqrt(norm.dot(norm));
+    factors /= fac;
+}
+
 // Calculating the intersection of a plane and a set of lines
 void PCL_Converter::linesPlaneIntersection(std::vector<float> plane, std::vector<geometry_msgs::Point32>& intersections, cv::Point3d pointOnPlane, cv::Point3d rayOrigin){
     cv::Point3d normal(plane.at(0), plane.at(1), plane.at(2));
     for (int i=0; i < this->rays.size(); i++){
         cv::Point3d intersection;
         geometry_msgs::Point32 msg;
-        linePlaneIntersection(intersection, this->rays.at(i), rayOrigin, normal, pointOnPlane);
+        // linePlaneIntersection(intersection, this->rays.at(i), rayOrigin, normal, pointOnPlane);
         msg.x = intersection.x;
         msg.y = intersection.y;
         msg.z = intersection.z;
@@ -300,6 +376,27 @@ void PCL_Converter::linesPlaneIntersection(std::vector<float> plane, std::vector
         intersections.at(i) = msg; 
     }
 }
+
+void PCL_Converter::linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin){
+    Eigen::Vector3d normal(plane(0), plane(1), plane(2));
+    for (int i=0 ; i < this->rays.size(); i++){
+        Eigen::Vector3d intersection;
+        geometry_msgs::Point32 msg;
+        linePlaneIntersection(intersection, this->rays.at(i), rayOrigin, normal, pointOnPlane);
+        msg.x = intersection(0);
+        msg.y = intersection(1);
+        msg.z = intersection(2);
+        intersections.at(i) = msg;
+    }
+}
+
+void PCL_Converter::linePlaneIntersection(Eigen::Vector3d& contact, Eigen::Vector3d ray, Eigen::Vector3d rayOrigin, Eigen::Vector3d normal, Eigen::Vector3d coord){
+    double d = normal.dot(coord);
+    double x = (d - normal.dot(rayOrigin)) / normal.dot(ray);
+
+    contact = rayOrigin + x * ray;
+}
+
 
 // calculating the intersection of a single line and a plane
 // From: https://stackoverflow.com/questions/7168484/3d-line-segment-and-plane-intersection
@@ -328,6 +425,15 @@ cv::Mat PCL_Converter::convertVecToMat(std::vector<cv::Point3f> plane_pts){
     return planeMat;
 }
 
+Eigen::MatrixXd PCL_Converter::convertVecToMat(std::vector<Eigen::Vector3d> plane_pts){
+    Eigen::MatrixXd mat(4, plane_pts.size());
+    for (int col = 0; col<plane_pts.size(); col++){
+        mat.col(col) = plane_pts.at(col);
+    }
+    return mat;
+}
+
+
 // Debugging functions:
 void PCL_Converter::logTransform( geometry_msgs::TransformStamped transform)  {
     ROS_INFO("Transform from %s to %s\n\tx: %f\n\ty: %f\n\tz: %f\n\tw: %f\n\trx: %f\n\try: %f\n\trz: %f\n",
@@ -340,6 +446,10 @@ void PCL_Converter::logTransform( geometry_msgs::TransformStamped transform)  {
 
 void PCL_Converter::printMat(cv::Mat matrix, std::string name = ""){
     std::cout << "Matrix: " << name << std::endl << " " << matrix << std::endl;
+}
+
+void PCL_Converter::printMat(Eigen::MatrixXd mat, std::string name = ""){
+    std::cout << "Matrix: " << name << std::endl << " " << mat << std::endl;
 }
 
 
