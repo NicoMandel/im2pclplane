@@ -21,7 +21,6 @@
 #include <sensor_msgs/image_encodings.h>
 #include <Eigen/Geometry>
 #include <Eigen/Dense>
-#include <omp.h>
 
 // own imports
 #include <sensor_msgs/PointCloud.h>
@@ -227,7 +226,6 @@ Eigen::Vector4d PCL_Converter::calculatePlane(Eigen::Matrix3d newplane){
 
 void PCL_Converter::linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin){
     Eigen::Vector3d normal(plane(0), plane(1), plane(2));
-    #pragma omp parallel for
     for (int i=0 ; i < this->rays.size(); i++){
         Eigen::Vector3d intersection;
         geometry_msgs::Point32 msg;

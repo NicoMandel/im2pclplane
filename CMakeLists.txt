@@ -22,15 +22,6 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
 
-find_package(OpenMP)
-if(OPENMP_FOUND)
-  message(STATUS "OPENMP FOUND")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-  # set(OPENMP_LIBS gomp)
-endif()
-
-
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 
@@ -165,13 +156,11 @@ add_executable(publish_pcl_node src/publish_pcl.cpp)
 ## same as for the library above
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-# target_compile_options(publish_pcl_node PRIVATE ${OpenMP_FLAGS})
 ## Specify libraries to link a library or executable target against
 target_link_libraries(publish_pcl_node
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
   # ${Eigen3_LIBRARIES}
-  # ${OpenMP_LIBS}
 )
 
 #############
