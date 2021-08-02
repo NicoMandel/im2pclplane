@@ -20,6 +20,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(OpenCV REQUIRED)
+# find_package(Eigen3 REQUIRED)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -126,6 +127,8 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+  # ${Eigen3_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -156,6 +159,8 @@ add_executable(publish_pcl_node src/publish_pcl.cpp)
 ## Specify libraries to link a library or executable target against
 target_link_libraries(publish_pcl_node
   ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+  # ${Eigen3_LIBRARIES}
 )
 
 #############

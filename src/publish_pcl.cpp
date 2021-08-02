@@ -42,6 +42,7 @@ public:
     PCL_Converter(/* args */);
     void imageCb(const sensor_msgs::ImageConstPtr&, const sensor_msgs::CameraInfoConstPtr&);
     void convertPixelsToRays(int width, int height, std::vector<cv::Point3d>& rays);
+    cv::Point3d pixelToRay(int u, int v, double cx, double cy, double fx, double fy);
     cv::Point2d homogenisePoint(int, int, double, double, double, double);
 
     cv::Point3f transformPointInverse(cv::Point3f, cv::Matx44f);
@@ -51,8 +52,11 @@ public:
     void calculatePlane(cv::Mat, std::vector<float>&);
     void linesPlaneIntersection(std::vector<float> plane, std::vector<geometry_msgs::Point32> &intersections, cv::Point3d pointOnPlane, cv::Point3d rayOrigin);
     void linePlaneIntersection(cv::Point3d& contact, cv::Point3d ray, cv::Point3d rayOrigin, cv::Point3d normal, cv::Point3d coord);
-    void logTransform(geometry_msgs::TransformStamped);
     cv::Mat convertVecToMat(std::vector<cv::Point3f>);
+
+    // debugging utilties
+    void logTransform(geometry_msgs::TransformStamped);
+    void printMat(cv::Mat, std::string);
 };
 
 // Member functions
@@ -127,9 +131,11 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     // Convert OpenCV and ROS representations
     cv::Mat T = cv::Mat_<double>(4,4);
     TransformToT(transform, T);
+    printMat(T, std::string("T "));
 
     // Turn the plane points into the new coordinate frame
     cv::Mat newplane = convertPts(T);
+    printMat(newplane, std::string("New Plane"));
 
     // Calculate the new plane equation
     std::vector<float> planecoeff(4);
@@ -159,12 +165,23 @@ void PCL_Converter::convertPixelsToRays(int width, int height, std::vector<cv::P
 
     for (int y=0; y < height; y++){
         for (int x=0; x < width; x++){
-            cv::Point2d uv_rect = homogenisePoint(x, y, cx, cy, fx, fy);
-            cv::Point3d ray = this->cam_model_.projectPixelTo3dRay(uv_rect);
+            cv::Point3d ray = pixelToRay(x, y, cx, cy, fx, fy);
             int index = y * width + x;
             rays.at(index) = ray;
         }
     }
+}
+
+// Converting a single pixel to a ray - following the definition of the python class
+cv::Point3d PCL_Converter::pixelToRay(int u, int v, double cx, double cy, double fx, double fy){
+    double x = (u - cx) / fx;
+    double y = (v - cy) / fy;
+    float norm = sqrt(x*x + y*y);
+    x /= norm;
+    y /= norm;
+    double z = 1.0 / norm;
+    cv::Point3d point(x, y, z);
+    return point;
 }
 
 // Converting image coordinate to rectified Point
@@ -320,6 +337,11 @@ void PCL_Converter::logTransform( geometry_msgs::TransformStamped transform)  {
                 transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y, transform.transform.rotation.z
             );
 }
+
+void PCL_Converter::printMat(cv::Mat matrix, std::string name = ""){
+    std::cout << "Matrix: " << name << std::endl << " " << matrix << std::endl;
+}
+
 
 int main(int argc, char **argv){
     ros::init(argc, argv, "plane_node");
