@@ -61,12 +61,17 @@ public:
 // Member functions
 PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
 {
-    std::string image_topic;
+    std::string camera;
     std::string pcl_topic;
-    image_topic = nh_.resolveName("hbv_1615/image_color");
+    // image_topic = nh_.resolveName("hbv_1615/image_color");
+    nh_.param("camera_name", camera, std::string("/scouter_vision"));
     nh_.param("pcl_topic", pcl_topic, std::string("pcl_plane"));
     nh_.param("world_frame", this->world_frame, std::string("map"));
-    sub_ = it_.subscribeCamera(image_topic, 1, &PCL_Converter::imageCb, this);
+    
+    std::string image_topic = camera + "/image_raw";
+    // Making the compressed image explicit
+    image_transport::TransportHints hints("compressed");
+    sub_ = it_.subscribeCamera(image_topic, 1, &PCL_Converter::imageCb, this, hints);
     pcl_pub_ = nh_.advertise<sensor_msgs::PointCloud>(pcl_topic, 1);
 
     // world plane points
@@ -87,8 +92,9 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
     this->world_plane = convertVecToMat(plane);
 
     // Getting the Camera model - preallocation
+    std::string cam_info_topic = camera + "/camera_info";
     sensor_msgs::CameraInfoConstPtr info;
-    info = ros::topic::waitForMessage<sensor_msgs::CameraInfo>("/hbv_1615/camera_info", ros::Duration(3.0));
+    info = ros::topic::waitForMessage<sensor_msgs::CameraInfo>(cam_info_topic, ros::Duration(30.0));
     this->cam_model_.fromCameraInfo(info);
 
     // Assigning the rays - preallocation
@@ -119,7 +125,7 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     geometry_msgs::TransformStamped transform;
     try{
         ros::Time image_time = info_msg->header.stamp;
-        ros::Duration timeout(1.0 / 30);
+        ros::Duration timeout(1.0 / 1.);
         transform = tfBuffer.lookupTransform(this->cam_model_.tfFrame(), this->world_frame, image_time, timeout);
     } catch(tf2::TransformException& ex){
         ROS_WARN("Failed to get transform from %s to %s", cam_model_.tfFrame().c_str(), this->world_frame.c_str());
