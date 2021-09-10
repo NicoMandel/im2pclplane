@@ -8,7 +8,7 @@
  * @copyright Copyright (c) 2020 Juan Sandino, Data61 CSIRO
  *
  */
-#include "camera/footprint.hpp"
+#include "footprint.hpp"
 
 Footprint::Footprint()
 {
