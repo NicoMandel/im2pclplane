@@ -1,0 +1,33 @@
+<!--This file launches either a bag or a simulation and the point-cloud converter.--> 
+<!--  Newtorks can be launched through the desiccation_cnn package -->
+<!--  -->
+<launch>
+  <arg name="camera_name" default="/scouter_vision"/>
+  <arg name="out_width" default="1920"/> <!-- 256 --> 
+  <arg name="out_height" default="1080"/> <!-- 192 -->
+  <arg name="static_tf" default="False"/>
+  <arg name="pcl_topic" default="pcl_plane"/>
+  <arg name="world_frame" default="map"/>
+  <arg name="camera_frame" default="oak_d_link"/>
+  <arg name="info_topic" default="$(arg camera_name)/camera_info"/>
+  <arg name="image_topic" default="$(arg camera_name)/image_raw"/>
+  <arg name="dummy_img" default="false"/>
+
+  <!-- Camera calibration -->
+  <include file="$(find desiccation_cnn)/launch/calibration.launch">
+    <arg name="camera_name" value="$(arg camera_name)"/>
+    <arg name="out_width" value="$(arg out_width)"/>
+    <arg name="out_height" value="$(arg out_height)"/>
+    <arg name="static_tf" value="$(arg static_tf)"/>
+    <arg name="camera_frame" value="$(arg camera_frame)"/>
+    <arg name="dummy_img" value="$(arg dummy_img)"/>
+  </include>
+
+  <!-- The Point Cloud converter -->
+  <param name="pcl_topic" type="string" value="$(arg pcl_topic)"/>
+  <param name="world_frame" type="string" value="$(arg world_frame)"/>
+  <param name="camera_info_topic" type="string" value="$(arg info_topic)"/>
+  <param name="image_topic" type="string" value="$(arg image_topic)"/>
+  <node pkg="learning_image_geometry" type="publish_pcl_node" name="pcl_plane" output="screen"/>
+  
+</launch>

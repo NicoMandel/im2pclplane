@@ -61,21 +61,27 @@ public:
 // Member functions
 PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
 {
-    std::string camera;
-    std::string pcl_topic;
+    std::string image_topic, pcl_topic, info_topic;
     // image_topic = nh_.resolveName("hbv_1615/image_color");
-    nh_.param("camera_name", camera, std::string("/scouter_vision"));
+    nh_.param("camera_info_topic", info_topic, std::string("/scouter_vision/camera_info"));
+    nh_.param("image_topic", image_topic, std::string("/scouter_vision/image_raw"));
     nh_.param("pcl_topic", pcl_topic, std::string("pcl_plane"));
     nh_.param("world_frame", this->world_frame, std::string("map"));
     
-    std::string image_topic = camera + "/image_raw";
+    // Logging
+    ROS_INFO("Subscribing to %s for camera info.", info_topic.c_str());
+    ROS_INFO("Subscribing to %s for images. Using compressed transport", image_topic.c_str());
+    ROS_INFO("Publishing to %s", pcl_topic.c_str());    
+    
+    // std::string image_topic = camera + "/image_raw";
     // Making the compressed image explicit
     image_transport::TransportHints hints("compressed");
+
+    // TODO: can already subscribe to the processed image here
     sub_ = it_.subscribeCamera(image_topic, 1, &PCL_Converter::imageCb, this, hints);
     pcl_pub_ = nh_.advertise<sensor_msgs::PointCloud>(pcl_topic, 1);
 
     // world plane points
-    // TODO: see if this throws an error
     cv::Vec3d plane_pt1, plane_pt2, plane_pt3;
     std::vector<float> pt1, pt2, pt3;
     nh_.param("plane/point1", pt1, {0.f, 0.f, 0.f});
@@ -92,10 +98,10 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
     this->world_plane = convertVecToMat(plane);
 
     // Getting the Camera model - preallocation
-    std::string cam_info_topic = camera + "/camera_info";
     sensor_msgs::CameraInfoConstPtr info;
-    info = ros::topic::waitForMessage<sensor_msgs::CameraInfo>(cam_info_topic, ros::Duration(30.0));
+    info = ros::topic::waitForMessage<sensor_msgs::CameraInfo>(info_topic, ros::Duration(30.0));
     this->cam_model_.fromCameraInfo(info);
+    ROS_INFO("Looking up point conversion from: %s to %s", this->cam_model_.tfFrame().c_str(), this->world_frame.c_str());
 
     // Assigning the rays - preallocation
     this->rays = std::vector<Eigen::Vector3d>(info->width * info->height);
@@ -128,7 +134,7 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
         ros::Duration timeout(1.0 / 1.);
         transform = tfBuffer.lookupTransform(this->cam_model_.tfFrame(), this->world_frame, image_time, timeout);
     } catch(tf2::TransformException& ex){
-        ROS_WARN("Failed to get transform from %s to %s", cam_model_.tfFrame().c_str(), this->world_frame.c_str());
+        ROS_WARN("Failed to get transform from %s to %s: %s", cam_model_.tfFrame().c_str(), this->world_frame.c_str(), ex.what());
         return;
     }
 
