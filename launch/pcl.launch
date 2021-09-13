@@ -12,9 +12,10 @@
   <arg name="info_topic" default="$(arg camera_name)/camera_info"/>
   <arg name="image_topic" default="$(arg camera_name)/image_raw"/>
   <arg name="dummy_img" default="false"/>
+  <arg name="simulation" default="false"/>
 
   <!-- Camera calibration -->
-  <include file="$(find desiccation_cnn)/launch/calibration.launch">
+  <include unless="$(arg simulation)" file="$(find desiccation_cnn)/launch/calibration.launch">
     <arg name="camera_name" value="$(arg camera_name)"/>
     <arg name="out_width" value="$(arg out_width)"/>
     <arg name="out_height" value="$(arg out_height)"/>
