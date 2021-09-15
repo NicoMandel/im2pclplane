@@ -50,12 +50,12 @@ public:
     void TransformToT(geometry_msgs::TransformStamped, Eigen::Matrix4d&);
     Eigen::MatrixXd convertPts(Eigen::MatrixXd , Eigen::Matrix4d);
     Eigen::Vector4d calculatePlane(Eigen::Matrix3d);
-    void linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, std::vector<float> &color_vals, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin);
+    void linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, std::vector<float> &color_vals, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin, cv::Mat &image);
     void linePlaneIntersection(Eigen::Vector3d& contact, Eigen::Vector3d ray, Eigen::Vector3d rayOrigin, Eigen::Vector3d normal, Eigen::Vector3d coord);
     Eigen::MatrixXd convertVecToMat(std::vector<Eigen::Vector3d>);
 
     // PCL color conversion
-    float rgbtofloat(int, int, int);
+    float rgbtofloat(uint8_t r, uint8_t g, uint8_t b);
 
     // debugging utilties
     void logTransform(geometry_msgs::TransformStamped);
@@ -162,7 +162,7 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     Eigen::Vector3d coordinate = nplane.col(0);
     Eigen::Vector3d rayOrigin(0.0, 0.0, 0.0);
     // include the color calculation in here
-    linesPlaneIntersection(planecoeff, planePoints, col_values, coordinate, rayOrigin);
+    linesPlaneIntersection(planecoeff, planePoints, col_values, coordinate, rayOrigin, image);
 
     // turn into pointcloud message
     sensor_msgs::PointCloud msg;
@@ -249,8 +249,15 @@ Eigen::Vector4d PCL_Converter::calculatePlane(Eigen::Matrix3d newplane){
 }
 
 
-void PCL_Converter::linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, std::vector<float> &color_vals, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin){
+void PCL_Converter::linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, std::vector<float> &color_vals, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin, cv::Mat &image){
     Eigen::Vector3d normal(plane(0), plane(1), plane(2));
+
+    // Image stuff - from: https://stackoverflow.com/questions/7899108/opencv-get-pixel-channel-value-from-mat-image
+    uint8_t* pixelPtr = (uint8_t*)image.data;
+    int channels = image.channels();
+    int row, col;
+    uint8_t r, g, b;
+
     for (int i=0 ; i < this->rays.size(); i++){
         Eigen::Vector3d intersection;
         geometry_msgs::Point32 msg;
@@ -260,8 +267,12 @@ void PCL_Converter::linesPlaneIntersection(Eigen::Vector4d plane, std::vector<ge
         msg.z = intersection(2);
         intersections.at(i) = msg;
 
-        int r(0), g(0), b(100);
-       // TODO: get r, g, b out of the image
+        // Getting the RGB out of the image and projecting it to the pointcloud
+        row = floor(i / image.cols);
+        col = i % image.cols;
+        b = pixelPtr[row * channels * image.cols + col * channels + 0];
+        g = pixelPtr[row * channels * image.cols + col * channels + 1];
+        r = pixelPtr[row * channels * image.cols + col * channels + 2];
 
         color_vals.at(i) = rgbtofloat(r, g, b);
         // Do the PCL color conversion here
@@ -296,7 +307,7 @@ Eigen::MatrixXd PCL_Converter::convertVecToMat(std::vector<Eigen::Vector3d> plan
 
 // PCL color conversion - see book
 // "A systematic approach to learning robot programming with ROS p. 339"
-float PCL_Converter::rgbtofloat(int r, int g, int b){
+float PCL_Converter::rgbtofloat(uint8_t r, uint8_t g, uint8_t b){
     uint32_t rgb = (static_cast<uint32_t> (r) << 16 | static_cast<uint32_t> (g) << 8 | static_cast<uint32_t> (b));
     float rgb_float = *reinterpret_cast<float*> (&rgb);
     return rgb_float;
