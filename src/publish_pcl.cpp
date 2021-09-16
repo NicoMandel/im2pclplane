@@ -25,13 +25,16 @@
 // own imports
 #include <sensor_msgs/PointCloud.h>
 #include <sensor_msgs/ChannelFloat32.h>
+#include <sensor_msgs/CompressedImage.h>
+#include <message_filters/subscriber.h>
+#include <tf2_ros/message_filter.h>
 
 class PCL_Converter
 {
 private:
     ros::NodeHandle nh_;
     image_transport::ImageTransport it_;
-    image_transport::CameraSubscriber sub_;
+    image_transport::Subscriber sub_;
     ros::Publisher pcl_pub_;
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener tf_listener_;
@@ -40,9 +43,13 @@ private:
     Eigen::MatrixXd world_plane;
     std::vector<Eigen::Vector3d> rays;
 
+    // Message Filter
+    message_filters::Subscriber<sensor_msgs::CompressedImage> filt_sub;
+    tf2_ros::MessageFilter<sensor_msgs::CompressedImage> tf2_filt_;
+
 public:
     PCL_Converter(/* args */);
-    void imageCb(const sensor_msgs::ImageConstPtr&, const sensor_msgs::CameraInfoConstPtr&);
+    void imageCb(const sensor_msgs::CompressedImageConstPtr&);
     void convertPixelsToRays(int width, int height, std::vector<Eigen::Vector3d>& rays);
     Eigen::Vector3d pixelToRay(int u, int v, double cx, double cy, double fx, double fy);
 
@@ -63,7 +70,7 @@ public:
 };
 
 // Member functions
-PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
+PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer), tf2_filt_(tfBuffer, world_frame, 10, nh_)
 {
     std::string image_topic, pcl_topic, info_topic;
     // image_topic = nh_.resolveName("hbv_1615/image_color");
@@ -81,9 +88,18 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
     // Making the compressed image explicit
     image_transport::TransportHints hints("compressed");
 
-    // TODO: can already subscribe to the processed image here
-    sub_ = it_.subscribeCamera(image_topic, 1, &PCL_Converter::imageCb, this, hints);
+    // Subscribing to the image
+    // sub_ = it_.subscribe(image_topic, 1, &PCL_Converter::imageCb, this, hints);
     pcl_pub_ = nh_.advertise<sensor_msgs::PointCloud>(pcl_topic, 1);
+
+    // Adding the message filter
+    filt_sub.subscribe(nh_, image_topic, 1);
+    // in case target frame does not work
+    // tf2_filt_->registerCallback(boost::bind(&PCL_Converter::imageCb, this, _1));
+    tf2_filt_.setTargetFrame(world_frame);
+    tf2_filt_.registerCallback(boost::bind(&PCL_Converter::imageCb, this, _1));
+    ROS_INFO("Converting to %s, world frame: %s", tf2_filt_.getTargetFramesString().c_str(), world_frame.c_str());
+
 
     // world plane points
     cv::Vec3d plane_pt1, plane_pt2, plane_pt3;
@@ -114,7 +130,7 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
 }
 
 // Image Callback
-void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const sensor_msgs::CameraInfoConstPtr& info_msg){
+void PCL_Converter::imageCb(const sensor_msgs::CompressedImageConstPtr& image_msg){
 
     // Convert image
     cv::Mat image;
@@ -134,7 +150,7 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     // look up the transform of the camera in the world frame
     geometry_msgs::TransformStamped transform;
     try{
-        ros::Time image_time = info_msg->header.stamp;
+        ros::Time image_time = image_msg->header.stamp;
         ros::Duration timeout(1.0 / 1.);
         transform = tfBuffer.lookupTransform(this->cam_model_.tfFrame(), this->world_frame, image_time, timeout);
     } catch(tf2::TransformException& ex){
@@ -167,7 +183,7 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     // turn into pointcloud message
     sensor_msgs::PointCloud msg;
     msg.points = planePoints;
-    msg.header = info_msg->header;
+    msg.header = image_msg->header;
     // Assigning the color value
     channels.front().values = col_values;
     channels.front().name = "rgb";
