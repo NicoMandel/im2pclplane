@@ -25,6 +25,7 @@
 // own imports
 #include <sensor_msgs/PointCloud.h>
 #include <sensor_msgs/ChannelFloat32.h>
+// #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CompressedImage.h>
 #include <message_filters/subscriber.h>
 #include <tf2_ros/message_filter.h>
@@ -33,7 +34,7 @@ class PCL_Converter
 {
 private:
     ros::NodeHandle nh_;
-    image_transport::ImageTransport it_;
+    // image_transport::ImageTransport it_;
     image_transport::Subscriber sub_;
     ros::Publisher pcl_pub_;
     tf2_ros::Buffer tfBuffer;
@@ -46,6 +47,7 @@ private:
     // Message Filter
     message_filters::Subscriber<sensor_msgs::CompressedImage> filt_sub;
     tf2_ros::MessageFilter<sensor_msgs::CompressedImage> tf2_filt_;
+    std::string camera_frame;
 
 public:
     PCL_Converter(/* args */);
@@ -70,7 +72,7 @@ public:
 };
 
 // Member functions
-PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer), tf2_filt_(tfBuffer, world_frame, 10, nh_)
+PCL_Converter::PCL_Converter() : /*it_(nh_),*/ tf_listener_(tfBuffer), tf2_filt_(filt_sub, tfBuffer, world_frame, 10, 0)
 {
     std::string image_topic, pcl_topic, info_topic;
     // image_topic = nh_.resolveName("hbv_1615/image_color");
@@ -78,6 +80,7 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer), tf2_filt_(tfB
     nh_.param("image_topic", image_topic, std::string("/scouter_vision/image_raw"));
     nh_.param("pcl_topic", pcl_topic, std::string("pcl_plane"));
     nh_.param("world_frame", this->world_frame, std::string("map"));
+    nh_.param("camera_frame", camera_frame, std::string("oak_d_link"));
     
     // Logging
     ROS_INFO("Subscribing to %s for camera info.", info_topic.c_str());
@@ -93,10 +96,11 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer), tf2_filt_(tfB
     pcl_pub_ = nh_.advertise<sensor_msgs::PointCloud>(pcl_topic, 1);
 
     // Adding the message filter
-    filt_sub.subscribe(nh_, image_topic, 1);
+    filt_sub.subscribe(nh_, (image_topic + "/compressed"), 10 , hints.getRosHints());
     // in case target frame does not work
     // tf2_filt_->registerCallback(boost::bind(&PCL_Converter::imageCb, this, _1));
     tf2_filt_.setTargetFrame(world_frame);
+    // tf2_filt_.connectInput(filt_sub);
     tf2_filt_.registerCallback(boost::bind(&PCL_Converter::imageCb, this, _1));
     ROS_INFO("Converting to %s, world frame: %s", tf2_filt_.getTargetFramesString().c_str(), world_frame.c_str());
 
