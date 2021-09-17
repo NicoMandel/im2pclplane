@@ -29,12 +29,16 @@
 #include <sensor_msgs/CompressedImage.h>
 #include <message_filters/subscriber.h>
 #include <tf2_ros/message_filter.h>
+#include <message_filters/synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
+#include <image_transport/subscriber_filter.h>
+#include <geometry_msgs/TransformStamped.h>
 
 class PCL_Converter
 {
 private:
     ros::NodeHandle nh_;
-    // image_transport::ImageTransport it_;
+    image_transport::ImageTransport it_;
     image_transport::Subscriber sub_;
     ros::Publisher pcl_pub_;
     tf2_ros::Buffer tfBuffer;
@@ -45,13 +49,18 @@ private:
     std::vector<Eigen::Vector3d> rays;
 
     // Message Filter
-    message_filters::Subscriber<sensor_msgs::CompressedImage> filt_sub;
-    tf2_ros::MessageFilter<sensor_msgs::CompressedImage> tf2_filt_;
+    // message_filters::Subscriber<sensor_msgs::CompressedImage> filt_sub;
+    tf2_ros::MessageFilter<sensor_msgs::Image> tf2_filt_;
     std::string camera_frame;
+    image_transport::SubscriberFilter img_filt_sub_;
+
+    // ImageSubscriber orig_image_sub_;
+    // typedef message_filters::sync_policies::ApproximateTime< geometry_msgs::TransformStamped, sensor_msgs::Image> MySyncPolicy;
+    // message_filters::Synchronizer< MySyncPolicy > *sync;
 
 public:
     PCL_Converter(/* args */);
-    void imageCb(const sensor_msgs::CompressedImageConstPtr&);
+    void imageCb(const sensor_msgs::ImageConstPtr&);
     void convertPixelsToRays(int width, int height, std::vector<Eigen::Vector3d>& rays);
     Eigen::Vector3d pixelToRay(int u, int v, double cx, double cy, double fx, double fy);
 
@@ -72,7 +81,7 @@ public:
 };
 
 // Member functions
-PCL_Converter::PCL_Converter() : /*it_(nh_),*/ tf_listener_(tfBuffer), tf2_filt_(filt_sub, tfBuffer, world_frame, 10, 0)
+PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer), tf2_filt_(tfBuffer, world_frame, 10, nh_)
 {
     std::string image_topic, pcl_topic, info_topic;
     // image_topic = nh_.resolveName("hbv_1615/image_color");
@@ -87,7 +96,6 @@ PCL_Converter::PCL_Converter() : /*it_(nh_),*/ tf_listener_(tfBuffer), tf2_filt_
     ROS_INFO("Subscribing to %s for images. Using compressed transport", image_topic.c_str());
     ROS_INFO("Publishing to %s", pcl_topic.c_str());    
     
-    // std::string image_topic = camera + "/image_raw";
     // Making the compressed image explicit
     image_transport::TransportHints hints("compressed");
 
@@ -96,11 +104,15 @@ PCL_Converter::PCL_Converter() : /*it_(nh_),*/ tf_listener_(tfBuffer), tf2_filt_
     pcl_pub_ = nh_.advertise<sensor_msgs::PointCloud>(pcl_topic, 1);
 
     // Adding the message filter
-    filt_sub.subscribe(nh_, (image_topic + "/compressed"), 10 , hints.getRosHints());
+    img_filt_sub_.subscribe(it_, image_topic, 10, hints);
+    // filt_sub.subscribe(nh_, (image_topic + "/compressed"), 10 , hints.getRosHints());
     // in case target frame does not work
     // tf2_filt_->registerCallback(boost::bind(&PCL_Converter::imageCb, this, _1));
     tf2_filt_.setTargetFrame(world_frame);
+    tf2_filt_.connectInput(img_filt_sub_);
+    // sync = new message_filters::Synchronizer<MySyncPolicy>(MySyncPolicy(10), tf2_filt_, img_filt_sub_, 10);
     // tf2_filt_.connectInput(filt_sub);
+    // sync->registerCallback(boos::bind(&PCL_Converter::imageCb, this, _1, _2))
     tf2_filt_.registerCallback(boost::bind(&PCL_Converter::imageCb, this, _1));
     ROS_INFO("Converting to %s, world frame: %s", tf2_filt_.getTargetFramesString().c_str(), world_frame.c_str());
 
@@ -134,7 +146,7 @@ PCL_Converter::PCL_Converter() : /*it_(nh_),*/ tf_listener_(tfBuffer), tf2_filt_
 }
 
 // Image Callback
-void PCL_Converter::imageCb(const sensor_msgs::CompressedImageConstPtr& image_msg){
+void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg){
 
     // Convert image
     cv::Mat image;
