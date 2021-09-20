@@ -50,12 +50,13 @@ public:
     void TransformToT(geometry_msgs::TransformStamped, Eigen::Matrix4d&);
     Eigen::MatrixXd convertPts(Eigen::MatrixXd , Eigen::Matrix4d);
     Eigen::Vector4d calculatePlane(Eigen::Matrix3d);
-    void linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, std::vector<float> &color_vals, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin, cv::Mat &image);
+    void linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, std::vector<float> &color_vals, std::vector<float> &intensity_vals, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin, cv::Mat &image);
     void linePlaneIntersection(Eigen::Vector3d& contact, Eigen::Vector3d ray, Eigen::Vector3d rayOrigin, Eigen::Vector3d normal, Eigen::Vector3d coord);
     Eigen::MatrixXd convertVecToMat(std::vector<Eigen::Vector3d>);
 
     // PCL color conversion
     float rgbtofloat(uint8_t r, uint8_t g, uint8_t b);
+    float rgbtoIntensity(uint8_t r, uint g, uint8_t b);
 
     // debugging utilties
     void logTransform(geometry_msgs::TransformStamped);
@@ -82,7 +83,7 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
     image_transport::TransportHints hints("compressed");
 
     // TODO: can already subscribe to the processed image here
-    sub_ = it_.subscribeCamera(image_topic, 1, &PCL_Converter::imageCb, this, hints);
+    sub_ = it_.subscribeCamera(image_topic, 5, &PCL_Converter::imageCb, this, hints);
     pcl_pub_ = nh_.advertise<sensor_msgs::PointCloud>(pcl_topic, 1);
 
     // world plane points
@@ -154,15 +155,16 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     Eigen::Vector4d planecoeff = calculatePlane(nplane);
 
     // Create the color channel part of the message
-    std::vector<sensor_msgs::ChannelFloat32> channels(1);
+    std::vector<sensor_msgs::ChannelFloat32> channels(2);
     std::vector<float> col_values(rays.size());
+    std::vector<float> intensity_vals(rays.size());
 
     // Calculate the intersection of plane and rays
     std::vector<geometry_msgs::Point32> planePoints(rays.size());
     Eigen::Vector3d coordinate = nplane.col(0);
     Eigen::Vector3d rayOrigin(0.0, 0.0, 0.0);
     // include the color calculation in here
-    linesPlaneIntersection(planecoeff, planePoints, col_values, coordinate, rayOrigin, image);
+    linesPlaneIntersection(planecoeff, planePoints, col_values, intensity_vals, coordinate, rayOrigin, image);
 
     // turn into pointcloud message
     sensor_msgs::PointCloud msg;
@@ -171,6 +173,8 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     // Assigning the color value
     channels.front().values = col_values;
     channels.front().name = "rgb";
+    channels.at(1).values = intensity_vals;
+    channels.at(1).name = "intensity";
     msg.channels = channels;
 
     // Publish
@@ -249,7 +253,7 @@ Eigen::Vector4d PCL_Converter::calculatePlane(Eigen::Matrix3d newplane){
 }
 
 
-void PCL_Converter::linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, std::vector<float> &color_vals, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin, cv::Mat &image){
+void PCL_Converter::linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, std::vector<float> &color_vals, std::vector<float> &intensity_vals, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin, cv::Mat &image){
     Eigen::Vector3d normal(plane(0), plane(1), plane(2));
 
     // Image stuff - from: https://stackoverflow.com/questions/7899108/opencv-get-pixel-channel-value-from-mat-image
@@ -311,6 +315,12 @@ float PCL_Converter::rgbtofloat(uint8_t r, uint8_t g, uint8_t b){
     uint32_t rgb = (static_cast<uint32_t> (r) << 16 | static_cast<uint32_t> (g) << 8 | static_cast<uint32_t> (b));
     float rgb_float = *reinterpret_cast<float*> (&rgb);
     return rgb_float;
+}
+
+// Turning the color into intensity - slows things down maybe more, but will be effective
+float PCL_Converter::rgbtoIntensity(uint8_t r, uint g, uint8_t b){
+    float intensity_float = (r > 150) ? 1.0 : 0.0;
+    return intensity_float;
 }
 
 // Debugging functions:
