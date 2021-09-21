@@ -279,6 +279,7 @@ void PCL_Converter::linesPlaneIntersection(Eigen::Vector4d plane, std::vector<ge
         r = pixelPtr[row * channels * image.cols + col * channels + 2];
 
         color_vals.at(i) = rgbtofloat(r, g, b);
+        intensity_vals.at(i) = rgbtoIntensity(r, g, b);
         // Do the PCL color conversion here
         // sensor_msgs::ChannelFloat32 fl;
         // fl.name = "rgb";
