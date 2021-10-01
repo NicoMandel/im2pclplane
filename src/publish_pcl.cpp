@@ -82,10 +82,6 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
     // Making the compressed image explicit
     image_transport::TransportHints hints("compressed");
 
-    // TODO: can already subscribe to the processed image here
-    sub_ = it_.subscribeCamera(image_topic, 5, &PCL_Converter::imageCb, this, hints);
-    pcl_pub_ = nh_.advertise<sensor_msgs::PointCloud>(pcl_topic, 1);
-
     // world plane points
     cv::Vec3d plane_pt1, plane_pt2, plane_pt3;
     std::vector<float> pt1, pt2, pt3;
@@ -104,13 +100,23 @@ PCL_Converter::PCL_Converter() : it_(nh_), tf_listener_(tfBuffer)
 
     // Getting the Camera model - preallocation
     sensor_msgs::CameraInfoConstPtr info;
-    info = ros::topic::waitForMessage<sensor_msgs::CameraInfo>(info_topic, ros::Duration(30.0));
+    info = ros::topic::waitForMessage<sensor_msgs::CameraInfo>(info_topic, ros::Duration(45.0));
     this->cam_model_.fromCameraInfo(info);
     ROS_INFO("Looking up point conversion from: %s to %s", this->cam_model_.tfFrame().c_str(), this->world_frame.c_str());
+
+    // If this is a simulation, we need to sleep for x s
+    int delay;
+    nh_.param("/delay", delay, 0);
+    if (delay > 0) ros::Duration(delay).sleep();
+
+    pcl_pub_ = nh_.advertise<sensor_msgs::PointCloud>(pcl_topic, 1);
 
     // Assigning the rays - preallocation
     this->rays = std::vector<Eigen::Vector3d>(info->width * info->height);
     convertPixelsToRays(info->width, info->height, this->rays);
+
+    // TODO: can already subscribe to the processed image here
+    sub_ = it_.subscribeCamera(image_topic, 5, &PCL_Converter::imageCb, this, hints);
     ROS_INFO("Initialized point cloud class");
 }
 
