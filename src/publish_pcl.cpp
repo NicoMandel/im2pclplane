@@ -48,9 +48,11 @@ public:
 
     void QtoRot(geometry_msgs::Quaternion q, Eigen::Matrix3d& R);
     void TransformToT(geometry_msgs::TransformStamped, Eigen::Matrix4d&);
+    // inversion of the transform matrix
+    Eigen::Matrix4d invertT(const Eigen::Matrix4d);
     Eigen::MatrixXd convertPts(Eigen::MatrixXd , Eigen::Matrix4d);
     Eigen::Vector4d calculatePlane(Eigen::Matrix3d);
-    void linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, std::vector<float> &color_vals, std::vector<float> &intensity_vals, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin, cv::Mat &image);
+    void linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, std::vector<float> &color_vals, std::vector<float> &intensity_vals, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin, Eigen::Matrix4d invT, cv::Mat &image);
     void linePlaneIntersection(Eigen::Vector3d& contact, Eigen::Vector3d ray, Eigen::Vector3d rayOrigin, Eigen::Vector3d normal, Eigen::Vector3d coord);
     Eigen::MatrixXd convertVecToMat(std::vector<Eigen::Vector3d>);
 
@@ -152,6 +154,13 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     // Convert representations
     Eigen::Matrix4d T;
     TransformToT(transform, T);
+    Eigen::Matrix4d invT = invertT(T);
+    // ! do the inverse transformation here
+    // ! use this example: https://stackoverflow.com/questions/64071131/computation-of-the-matrix-inverse-using-the-eigen-c-library-introduces-noise
+
+    // ! use this formula: https://math.stackexchange.com/questions/1234948/inverse-of-a-rigid-transformation
+    // ! and this specific implementation: https://amytabb.com/til/2021/06/23/eigen-extract-submatrices/
+    // ! also see just below how to get that out
 
     // Turn the plane points into the new coordinate frame
     Eigen::MatrixXd newplane = convertPts(this->world_plane, T);
@@ -170,12 +179,13 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     Eigen::Vector3d coordinate = nplane.col(0);
     Eigen::Vector3d rayOrigin(0.0, 0.0, 0.0);
     // include the color calculation in here
-    linesPlaneIntersection(planecoeff, planePoints, col_values, intensity_vals, coordinate, rayOrigin, image);
+    linesPlaneIntersection(planecoeff, planePoints, col_values, intensity_vals, coordinate, rayOrigin, invT, image);
 
     // turn into pointcloud message
     sensor_msgs::PointCloud msg;
     msg.points = planePoints;
     msg.header = info_msg->header;
+    msg.header.frame_id = this->world_frame;
     // Assigning the color value
     channels.front().values = col_values;
     channels.front().name = "rgb";
@@ -232,6 +242,16 @@ void PCL_Converter::TransformToT( geometry_msgs::TransformStamped transform, Eig
     T << rot, t, zeros;
 }
 
+Eigen::Matrix4d PCL_Converter::invertT(const Eigen::Matrix4d T){
+    Eigen::Matrix3d rot = T.topLeftCorner<3,3>();
+    Eigen::Vector3d t = T.topRightCorner<3,1>();
+
+    Eigen::Matrix4d inv;
+    inv << rot.transpose(), -1.0 * rot.transpose() * t, Eigen::RowVector4d(0.0, 0.0, 0.0, 1.0);
+    return inv;
+}
+
+
 Eigen::MatrixXd PCL_Converter::convertPts(Eigen::MatrixXd pts, Eigen::Matrix4d T){
     Eigen::MatrixXd out;
     out = T * pts;
@@ -259,7 +279,7 @@ Eigen::Vector4d PCL_Converter::calculatePlane(Eigen::Matrix3d newplane){
 }
 
 
-void PCL_Converter::linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, std::vector<float> &color_vals, std::vector<float> &intensity_vals, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin, cv::Mat &image){
+void PCL_Converter::linesPlaneIntersection(Eigen::Vector4d plane, std::vector<geometry_msgs::Point32> &intersections, std::vector<float> &color_vals, std::vector<float> &intensity_vals, Eigen::Vector3d pointOnPlane, Eigen::Vector3d rayOrigin, Eigen::Matrix4d invT, cv::Mat &image){
     Eigen::Vector3d normal(plane(0), plane(1), plane(2));
 
     // Image stuff - from: https://stackoverflow.com/questions/7899108/opencv-get-pixel-channel-value-from-mat-image
@@ -272,9 +292,13 @@ void PCL_Converter::linesPlaneIntersection(Eigen::Vector4d plane, std::vector<ge
         Eigen::Vector3d intersection;
         geometry_msgs::Point32 msg;
         linePlaneIntersection(intersection, this->rays.at(i), rayOrigin, normal, pointOnPlane);
-        msg.x = intersection(0);
-        msg.y = intersection(1);
-        msg.z = intersection(2);
+        // intersection is a Vector3d, can be converted straight away
+        // ! 
+        Eigen::Vector4d out = invT * Eigen::Vector4d(intersection(0), intersection(1), intersection(2), 1.0);
+        // TODO - 4x4 matrix, and a 3x1 matrix -> go figure.
+        msg.x = out(0);
+        msg.y = out(1);
+        msg.z = out(2);
         intersections.at(i) = msg;
 
         // Getting the RGB out of the image and projecting it to the pointcloud
@@ -297,6 +321,7 @@ void PCL_Converter::linePlaneIntersection(Eigen::Vector3d& contact, Eigen::Vecto
     double d = normal.dot(coord);
     double x = (d - normal.dot(rayOrigin)) / normal.dot(ray);
 
+    // TODO: here is where the conversion back into the other coordinate frame should happen
     contact = rayOrigin + x * ray;
 }
 
