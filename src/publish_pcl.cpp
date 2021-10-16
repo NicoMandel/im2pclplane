@@ -155,12 +155,11 @@ void PCL_Converter::imageCb(const sensor_msgs::ImageConstPtr& image_msg, const s
     Eigen::Matrix4d T;
     TransformToT(transform, T);
     Eigen::Matrix4d invT = invertT(T);
-    // ! do the inverse transformation here
-    // ! use this example: https://stackoverflow.com/questions/64071131/computation-of-the-matrix-inverse-using-the-eigen-c-library-introduces-noise
-
-    // ! use this formula: https://math.stackexchange.com/questions/1234948/inverse-of-a-rigid-transformation
-    // ! and this specific implementation: https://amytabb.com/til/2021/06/23/eigen-extract-submatrices/
-    // ! also see just below how to get that out
+    //  do the inverse transformation here
+    //  use this example: https://stackoverflow.com/questions/64071131/computation-of-the-matrix-inverse-using-the-eigen-c-library-introduces-noise
+    //  use this formula: https://math.stackexchange.com/questions/1234948/inverse-of-a-rigid-transformation
+    //  and this specific implementation: https://amytabb.com/til/2021/06/23/eigen-extract-submatrices/
+    //  also see just below how to get that out
 
     // Turn the plane points into the new coordinate frame
     Eigen::MatrixXd newplane = convertPts(this->world_plane, T);
